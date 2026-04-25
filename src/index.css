@@ -1,2 +1,5 @@
-/* Tailwind directives + token sync are wired in step 3.3.
-   This file currently exists to satisfy the main.tsx import. */
+@import './styles/tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
