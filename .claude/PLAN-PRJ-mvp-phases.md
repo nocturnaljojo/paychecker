@@ -15,8 +15,8 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` complete · `[!]` blocked
 
 ### Tasks
 
-- [ ] Set up React + Vite + TypeScript + Tailwind base (in `/src/`, NOT replacing static design system)
-- [ ] Wire shadcn/ui and import design tokens from `colors_and_type.css`
+- [x] Set up React + Vite + TypeScript + Tailwind base (s002 — at root; design system moved to `public/design-system/`)
+- [x] Wire shadcn/ui and import design tokens from `colors_and_type.css` (s002 — manual base; CLI deferred to INFRA-001 due to Tailwind v4 requirement)
 - [ ] Set up Supabase project (Sydney region — ap-southeast-2)
 - [ ] Set up Clerk auth (test mode)
 - [ ] Define DB schema in `.claude/ref/REF-DB-schema.md` and apply migrations

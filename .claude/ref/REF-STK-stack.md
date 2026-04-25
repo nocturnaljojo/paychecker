@@ -3,13 +3,45 @@
 ## Purpose
 Locked stack details. Single source of truth for tech, hosting region, version pins, deploy targets.
 
-## Frontend
-- **Framework:** React 18+ via Vite
-- **Language:** TypeScript (strict mode)
-- **Styling:** Tailwind CSS + shadcn/ui (component primitives)
-- **Design tokens:** sourced from existing `colors_and_type.css` at repo root — DO NOT redefine in tailwind config; import as CSS vars.
-- **Hosting:** Vercel
-- **Region:** Vercel default + `vercel.json` set to AU edge region where supported.
+## Frontend (actual versions as of session 002, 2026-04-26)
+
+| Dep | Pinned | Why |
+|---|---|---|
+| react / react-dom | ^18.3.1 | Vite 8 / React 19 require Node ≥20.19; we're on 20.17 (see INFRA-001) |
+| vite | ^5.4.0 | Same engine reason as above |
+| @vitejs/plugin-react | ^4.3.0 | matches Vite 5 |
+| typescript | ~5.6.0 | matches `react-jsx`, no `erasableSyntaxOnly` |
+| tailwindcss | ^3.4 | shadcn-style copy/paste assumes v3 utilities |
+| postcss / autoprefixer | latest | Tailwind v3 build pipeline |
+| tailwindcss-animate | ^1.0.7 | shadcn animation utilities |
+| react-router-dom | ^6 | the v6 API; v7 may follow with React 19 |
+| eslint | ^8.57.0 | ESLint 10 requires Node ≥20.19; matches React 18 era |
+| @typescript-eslint/* | ^8.0.0 | TS 5.6 compatible |
+| eslint-plugin-react-hooks | ^4.6.0 | React 18 era |
+| @types/node | ^20 | matches our Node major |
+| clsx | ^2.1 | shadcn cn() helper |
+| tailwind-merge | ^2.5 | shadcn cn() helper |
+| class-variance-authority | ^0.7 | shadcn variants |
+| lucide-react | ^0.469 | icon library, last React 18 compat range |
+
+- **Language:** TypeScript (strict mode, bundler resolution, jsx: react-jsx)
+- **Styling:** Tailwind v3.4 + shadcn-style components (added by manual copy-paste, not the v4 CLI — see tasks/lessons.md s002 entry)
+- **Design tokens:** `src/styles/tokens.css` (React bundle) ≡ `public/design-system/colors_and_type.css` (design-system reference). Both files start with the TOKEN SYNC NOTE — edit one → edit the other. Tailwind config maps utilities to `var(--pc-*)` so values never duplicate inside the build.
+- **Hosting:** Vercel — `vercel.json` declares `framework: "vite"` with an SPA rewrite that excludes `/design-system/`, `/assets/`, `/favicon.ico`, `/robots.txt`.
+- **Region:** Vercel default global edge for the React app; design-system files are static and served from the same edge.
+
+### Path alias
+`@/* → ./src/*` configured in both `tsconfig.json` and `vite.config.ts`.
+
+### Folder structure (Phase 0)
+```
+src/
+  components/{ui,forms,layout}/   ← UI primitives, composed forms, app shell
+  features/{onboarding,shifts,payslips,comparisons,reports}/
+  hooks/, lib/, pages/, types/, config/, styles/
+public/
+  design-system/                  ← preserved static reference (was at root in s001)
+```
 
 ## Backend
 - **Framework:** FastAPI (Python 3.12+)

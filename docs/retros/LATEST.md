@@ -2,4 +2,4 @@
 # Pointer to the most recent session retro. Update this with every retro.
 # Read this file at session start — it tells you which retro to read next.
 
-→ `2026-04-26-s001-template-init.md`
+→ `2026-04-26-s002-phase0-scaffold-hour1.md`
