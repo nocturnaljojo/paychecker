@@ -35,14 +35,18 @@ All visuals in this system are built from the brief's specification. If the user
 
 ## Index
 
+All design-system files live under `public/design-system/` so Vite copies them to `dist/design-system/` at build, and Vercel serves them at `/design-system/`. The React app owns `/`.
+
 - `DESIGN-SYSTEM.md` — this file. Brand context, content & visual foundations, iconography. (Project-level docs live in `README.md` + `CLAUDE.md`.)
-- `SKILL.md` — machine-readable skill entry point (Claude Code + this platform).
-- `colors_and_type.css` — the ONLY source of truth for colors, typography, spacing, radii, motion.
-- `fonts/` — notes on IBM Plex (Google-hosted, optional self-host path).
-- `assets/` — logos, wordmarks, icon references.
-- `preview/` — individual design-system cards (colors, type, spacing, components) shown in the Design System tab.
-- `ui_kits/paychecker_pwa/` — mobile PWA UI kit. Open `index.html` for a clickable demo.
-- `ui_kits/paychecker_admin/` — desktop admin UI kit. Open `index.html` for a clickable demo.
+- `public/design-system/colors_and_type.css` — the design-system copy of the tokens. **Synced with `src/styles/tokens.css`** (React bundle); see the TOKEN SYNC NOTE at the top of either file.
+- `public/design-system/fonts/` — notes on IBM Plex (Google-hosted, optional self-host path).
+- `public/design-system/assets/` — logos, wordmarks, icon references.
+- `public/design-system/preview/` — individual design-system cards (colors, type, spacing, components).
+- `public/design-system/ui_kits/paychecker_pwa/` — mobile PWA UI kit. Open `index.html` for a clickable demo.
+- `public/design-system/ui_kits/paychecker_admin/` — desktop admin UI kit. Open `index.html` for a clickable demo.
+
+Local dev: `npm run dev` then visit `http://localhost:5173/design-system/`.
+Production: `https://<domain>/design-system/` (post-deploy).
 
 ---
 

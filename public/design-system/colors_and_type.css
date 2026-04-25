@@ -1,3 +1,10 @@
+/* TOKEN SYNC NOTE
+ * If you edit this file, also update:
+ * - src/styles/tokens.css (React app bundle)
+ * - public/design-system/colors_and_type.css (design system reference)
+ * These MUST stay in sync until Phase 1 extracts to shared package.
+ */
+
 /* PayChecker Design System — colors & type tokens
    ------------------------------------------------
    Source of truth. Do not introduce colors outside this file.

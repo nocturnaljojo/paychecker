@@ -60,10 +60,10 @@
 - `../tasks/lessons.md` — non-obvious gotchas learned across sessions
 - `../scripts/` — repo automation scripts (none yet)
 
-## Existing design-system snapshot (don't touch)
+## React app + design-system layout
 
-Files at repo root that ship the static design-system preview:
-- `index.html`, `colors_and_type.css`, `vercel.json`, `DESIGN-SYSTEM.md`
-- `assets/`, `fonts/`, `preview/`, `ui_kits/paychecker_pwa/`, `ui_kits/paychecker_admin/`
-
-These deploy to Vercel as the brand-system reference. The Phase 0 React/Vite app, when scaffolded, lives in `/src/` and DOES NOT replace these.
+After session 002 scaffolding:
+- The React/Vite app owns root: `index.html` (Vite entry), `package.json`, `vite.config.ts`, `src/`, `tailwind.config.js`, etc.
+- The static design-system preview lives under `public/design-system/`. Vite copies it to `dist/design-system/` at build → Vercel serves at `/design-system/`.
+- Token sync: `src/styles/tokens.css` (React bundle) ≡ `public/design-system/colors_and_type.css` (design-system reference). Edit one → edit the other. See TOKEN SYNC NOTE in either file.
+- `DESIGN-SYSTEM.md` (docs) and `README.md` (project README) stay at root.

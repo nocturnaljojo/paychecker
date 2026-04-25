@@ -104,8 +104,12 @@ Quick reference:
 - Retros — `YYYY-MM-DD-sNNN-topic.md`
 - Migrations — `NNNN_{description}.sql`
 
-## Existing Repo Note
+## Repo layout
 
-The repo already contains a static design-system snapshot at the root (`index.html`, `colors_and_type.css`, `assets/`, `preview/`, `ui_kits/`). It is deployed to Vercel as the design-system reference site. Do NOT delete or move these. The actual React/Vite app, when scaffolded in Phase 0, lives in `/src/` alongside them.
+The React/Vite app owns the root. The static design-system snapshot lives under `public/design-system/` so Vite copies it to `dist/design-system/` at build, and Vercel serves it at `/design-system/`. (Moved from root in session 002.)
 
-The original design-system documentation is preserved at `DESIGN-SYSTEM.md`. The root `README.md` is the public project README.
+- `/` (root) — React app entry (`index.html`, `package.json`, `vite.config.ts`, `src/`)
+- `/public/design-system/` — preserved static design-system reference (was at root in s001)
+- `/src/styles/tokens.css` — React-bundled copy of the tokens, kept in sync with `public/design-system/colors_and_type.css`. See TOKEN SYNC NOTE in either file.
+
+The design-system documentation is preserved at `DESIGN-SYSTEM.md`. The root `README.md` is the public project README.
