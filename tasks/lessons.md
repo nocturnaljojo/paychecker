@@ -32,3 +32,24 @@ Concrete checks for next time:
 For PayChecker specifically: deferred React 19 / Vite 8 / TS 6 / Node
 bump as INFRA-001 in `.claude/STATE-PRJ-improvements.md` — likely
 Phase 1 alongside other infrastructure upgrades.
+
+### 2026-04-26 — s002 — shadcn CLI now requires Tailwind v4
+
+`npx shadcn@latest init` (v4.5.0) writes a Tailwind v4 config: `oklch()`
+colors, `@import "tw-animate-css"`, `@import "shadcn/tailwind.css"`,
+`@fontsource-variable/geist`, `@base-ui/react` (replacing Radix), and
+`@apply border-border outline-ring/50` utilities — none of which work
+on Tailwind v3.4. The legacy `npx shadcn-ui@0.9.5 init` now also redirects
+to `shadcn@latest` with a deprecation notice — the legacy CLI is gone.
+
+Workaround for Phase 0: skip the CLI, install runtime deps directly
+(`clsx`, `tailwind-merge`, `class-variance-authority`, `lucide-react@^0.469`,
+`tailwindcss-animate@^1.0.7`), write `components.json` and
+`src/lib/utils.ts` (the standard `cn()` helper) by hand. Future shadcn
+components are sourced by copying their JSX from the docs and adapting
+the imports — they work fine with Tailwind v3 + Radix + React 18 because
+that's what shadcn was *originally* built on.
+
+When INFRA-001 ships, this workaround can be removed: `shadcn@latest`
+becomes the canonical add path again. Until then, prefer manual copy-paste
+over `shadcn add` (the latter targets Tailwind v4 patterns).
