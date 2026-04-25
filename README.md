@@ -8,11 +8,13 @@ PayChecker is an **information tool** — same regulatory category as the FWO Pa
 
 ## Status
 
-**Phase 0 in development.** No production app yet. Currently shipped:
-- Static design system (this repo at root, deployed to Vercel) — see `DESIGN-SYSTEM.md`.
+**Phase 0 in development.** Currently shipped:
+- React + Vite + TypeScript app scaffolded at root with Tailwind v3.4 + design tokens wired (s002).
+- Clerk auth (test mode) integrated (s002).
+- Static design-system reference preserved at `public/design-system/` → served at `/design-system/` in production.
 - Operational scaffolding (`CLAUDE.md`, `.claude/`, `docs/`) — see `.claude/INDEX.md`.
 
-The Phase 0 React/Vite app will be scaffolded into `/src/` alongside the existing design system, not replacing it.
+Phase 0 next steps: Supabase project (Sydney), DB migrations, worker onboarding (Layer 1 facts capture).
 
 ## Tiers
 
@@ -36,15 +38,21 @@ Full details in `.claude/ref/REF-STK-stack.md`.
 ## Repo layout
 
 ```
-/                       — design-system snapshot (deployed to Vercel)
-  index.html              landing page for the design system
-  colors_and_type.css     design token source of truth
-  preview/                design-system preview cards
-  ui_kits/                PWA + admin UI kits (HTML + JSX mocks)
-  assets/, fonts/         brand assets
-  DESIGN-SYSTEM.md        full design-system documentation
+/                       — React + Vite + TypeScript app at root
+  index.html              Vite entry
+  package.json, vite.config.ts, tsconfig*.json, tailwind.config.js
+  vercel.json             SPA rewrite + framework: vite
+  src/
+    main.tsx, App.tsx, index.css, vite-env.d.ts
+    components/{ui,forms,layout}/
+    features/{onboarding,shifts,payslips,comparisons,reports}/
+    hooks/, lib/, pages/, types/, config/, styles/
+  public/
+    design-system/        preserved static design-system reference
+                          (served at /design-system/ in production)
 
 CLAUDE.md               — project bible (read first)
+DESIGN-SYSTEM.md        — design-system documentation
 .claude/                — operational scaffolding
   INDEX.md                file map
   PLAN-PRJ-mvp-phases.md  6-phase MVP plan
@@ -68,14 +76,27 @@ scripts/                  repo automation (none yet)
 
 ## Setup
 
-Phase 0 setup steps will be added when the React/Vite app is scaffolded.
+```bash
+# 1. Install deps (Node 20.17+; do NOT bump to Node 22 yet — see INFRA-001)
+npm install
 
-For the design-system preview today:
+# 2. Configure environment
+cp .env.local.example .env.local
+# Edit .env.local — set VITE_CLERK_PUBLISHABLE_KEY to a Clerk dev key.
+# Get one at: https://clerk.com → New application → API Keys → copy the
+# "Publishable key" (starts with pk_test_).
+# DO NOT put the secret key (sk_test_) in this file — Vite would risk
+# bundling it into client JS. Phase 0 frontend doesn't need it.
+
+# 3. Run dev server
+npm run dev   # → http://localhost:5173
+
+# 4. Build / preview production output
+npm run build
+npm run preview   # → http://localhost:4173
 ```
-# from the repo root
-npx serve .
-# or open index.html in a browser
-```
+
+The static design-system preview is served at `/design-system/` in dev (direct file path) and production. In Vite's dev mode, visiting `/design-system/` may hit the SPA fallback — use `/design-system/index.html` if so. Production via `npm run preview` and Vercel both resolve `/design-system/` correctly.
 
 ## Owner
 

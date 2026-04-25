@@ -53,3 +53,25 @@ that's what shadcn was *originally* built on.
 When INFRA-001 ships, this workaround can be removed: `shadcn@latest`
 becomes the canonical add path again. Until then, prefer manual copy-paste
 over `shadcn add` (the latter targets Tailwind v4 patterns).
+
+### 2026-04-26 — s002 — Clerk env-var: prefix mismatch + secret key placement
+
+Two related gotchas hit in one paste:
+
+1. Clerk docs default to `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` because
+   Next.js is their flagship. Vite uses `VITE_*` prefix. Always rewrite
+   third-party env var examples to match your bundler. Common bundler
+   prefixes: Next.js `NEXT_PUBLIC_*`, Vite `VITE_*`, CRA `REACT_APP_*`,
+   SvelteKit `PUBLIC_*`.
+
+2. Clerk secret keys (`sk_test_*`, `sk_live_*`) NEVER belong in
+   `.env.local` of a Vite project. Vite bundles every `VITE_*` var into
+   client JS at build time, so if a future dev renames the secret
+   var "to make it work", it leaks into deployed JavaScript. Secret
+   keys go in: server-side env (Fly.io / Vercel server), password
+   manager during development, never in client-side env files.
+   Phase 0 has no backend = secret key has no home in this project yet.
+
+Operational rule baked in: `.env.local.example` documents what NOT to
+put in the file (commented at the bottom of the example). Future-self
+reading the example will see the secret-key warning before they paste.
