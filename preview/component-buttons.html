@@ -1,0 +1,36 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Buttons</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 22px 24px; gap: 18px; justify-content: center; }
+  .row-b { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    height: 48px; padding: 0 20px; border-radius: 12px; border: 0;
+    font: 500 16px/1 'IBM Plex Sans'; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background 150ms cubic-bezier(0.2, 0.6, 0.2, 1);
+  }
+  .btn-primary { background: #1F3A5F; color: #fff; }
+  .btn-primary:hover { background: #182E4B; }
+  .btn-secondary { background: #fff; color: #1F3A5F; border: 1px solid #1F3A5F; }
+  .btn-tertiary  { background: transparent; color: #1F3A5F; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-focus { background: #1F3A5F; color: #fff; box-shadow: 0 0 0 2px #FAF7F2, 0 0 0 4px #1F3A5F; }
+  .lbl-b { font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--pc-text-muted); font-family: var(--pc-font-mono); }
+  .col-b { display: flex; flex-direction: column; gap: 8px; }
+</style></head><body><div class="card">
+  <div class="col-b">
+    <span class="lbl-b">Default</span>
+    <div class="row-b">
+      <button class="btn btn-primary">Upload payslip</button>
+      <button class="btn btn-secondary">Cancel</button>
+      <button class="btn btn-tertiary">Why this number?</button>
+    </div>
+  </div>
+  <div class="col-b">
+    <span class="lbl-b">Focus · disabled</span>
+    <div class="row-b">
+      <button class="btn btn-focus">Upload payslip</button>
+      <button class="btn btn-primary" disabled>Upload payslip</button>
+    </div>
+  </div>
+</div></body></html>

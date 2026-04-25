@@ -1,0 +1,22 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Empty state</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 22px 24px; justify-content: center; }
+  .empty {
+    background: #FFFFFF; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    padding: 36px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 8px;
+  }
+  .ttl { font: 600 18px 'IBM Plex Sans'; color: var(--pc-text); }
+  .body { font-size: 15px; color: var(--pc-text-muted); max-width: 340px; line-height: 1.5; }
+  .btn { margin-top: 14px; height: 48px; padding: 0 20px; border-radius: 12px; background: #1F3A5F; color: #fff; font: 500 15px 'IBM Plex Sans'; border: 0; }
+  .icon { width: 40px; height: 40px; border-radius: 50%; background: #E8EDF4; display: flex; align-items: center; justify-content: center; color: #1F3A5F; }
+</style></head><body><div class="card">
+  <div class="empty">
+    <div class="icon">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    </div>
+    <div class="ttl">No payslips yet</div>
+    <div class="body">Upload a payslip to start checking. Photos, PDFs, or screenshots all work.</div>
+    <button class="btn">Upload payslip</button>
+  </div>
+</div></body></html>

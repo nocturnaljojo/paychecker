@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Primary</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 0; }
+  .swatches { display: grid; grid-template-columns: 1fr 1fr; gap: 0; flex: 1; min-height: 220px; }
+  .sw { padding: 20px 24px; display: flex; flex-direction: column; justify-content: space-between; min-height: 180px; }
+  .sw.navy     { background: #1F3A5F; color: #FAF7F2; }
+  .sw.navy-hover { background: #182E4B; color: #FAF7F2; }
+  .meta { display: flex; justify-content: space-between; font-family: var(--pc-font-mono); font-size: 13px; opacity: 0.85; }
+  .name { font-size: 18px; font-weight: 600; }
+  .role { font-size: 13px; opacity: 0.8; margin-top: 2px; }
+</style></head><body><div class="card">
+  <div class="swatches">
+    <div class="sw navy">
+      <div>
+        <div class="name">Navy</div>
+        <div class="role">Primary · dominant</div>
+      </div>
+      <div class="meta"><span>--pc-navy</span><span>#1F3A5F</span></div>
+    </div>
+    <div class="sw navy-hover">
+      <div>
+        <div class="name">Navy · pressed</div>
+        <div class="role">Hover / active</div>
+      </div>
+      <div class="meta"><span>--pc-navy-hover</span><span>#182E4B</span></div>
+    </div>
+  </div>
+</div></body></html>

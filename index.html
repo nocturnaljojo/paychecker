@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PayChecker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/colors_and_type.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+    background: #FAF7F2;
+    color: #1A1D24;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    line-height: 1.5;
+  }
+  .box { max-width: 480px; width: 100%; text-align: center; }
+  h1 { font-weight: 600; font-size: 32px; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .tag { color: #6B7280; margin: 0 0 32px; font-size: 15px; }
+  .links { display: grid; gap: 12px; }
+  a {
+    display: block;
+    padding: 20px 24px;
+    border-radius: 16px;
+    background: #FFFFFF;
+    color: #1F3A5F;
+    text-decoration: none;
+    font-weight: 500;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: background 200ms cubic-bezier(0.2, 0.6, 0.2, 1);
+  }
+  a:hover { background: #F5F1EA; }
+  a.primary { background: #1F3A5F; color: #FFFFFF; }
+  a.primary:hover { background: #182E4B; }
+  .caption { color: #6B7280; font-size: 13px; display: block; margin-top: 4px; font-weight: 400; }
+  footer { color: #6B7280; font-size: 13px; margin-top: 40px; }
+</style>
+</head>
+<body>
+  <div class="box">
+    <h1>PayChecker</h1>
+    <p class="tag">Internal preview. Pick a surface.</p>
+    <div class="links">
+      <a class="primary" href="/ui_kits/paychecker_pwa/index.html">
+        Worker PWA
+        <span class="caption">Mobile app — onboarding, Your data, upload flows</span>
+      </a>
+      <a href="/ui_kits/paychecker_admin/index.html">
+        Admin dashboard
+        <span class="caption">Operator console — workers, flags, rules, audit log</span>
+      </a>
+      <a href="/README.md">
+        Design system README
+        <span class="caption">Brand DNA, content fundamentals, tokens</span>
+      </a>
+    </div>
+    <footer>Not legal advice. Fair Work Ombudsman: 13 13 94.</footer>
+  </div>
+</body>
+</html>

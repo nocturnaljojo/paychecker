@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Pill tints</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 22px 24px; gap: 16px; justify-content: center; }
+  .row2 { display: flex; gap: 14px; flex-wrap: wrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 9999px;
+    font-size: 14px; font-weight: 500; font-family: var(--pc-font-sans);
+  }
+  .pill.amber { background:#FBF1DB; color:#7A5A1E; }
+  .pill.sage  { background:#E4EDE6; color:#385944; }
+  .pill.coral { background:#F5E1DE; color:#7A3B33; }
+  .pill.grey  { background:#EFECE3; color:#4B5262; }
+  .pill .dot { width:8px; height:8px; border-radius:50%; }
+  .pill.amber .dot { background:#E8B04B; }
+  .pill.sage .dot  { background:#5C8F6B; }
+  .pill.coral .dot { background:#C97064; }
+  .pill.grey .dot  { background:#6B7280; }
+  .note { font-size: 13px; color: var(--pc-text-muted); }
+</style></head><body><div class="card">
+  <div class="row2">
+    <span class="pill amber"><span class="dot"></span>Needs attention</span>
+    <span class="pill sage"><span class="dot"></span>Matches expected</span>
+    <span class="pill coral"><span class="dot"></span>We couldn't check</span>
+    <span class="pill grey"><span class="dot"></span>Pending</span>
+  </div>
+  <div class="note">Color is never the only signal — every pill pairs its tint with an explicit text label and a dot.</div>
+</div></body></html>

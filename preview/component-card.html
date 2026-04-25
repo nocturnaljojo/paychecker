@@ -1,0 +1,30 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Card anatomy</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 22px 24px; justify-content: center; gap: 8px; }
+  .demo {
+    background: #FFFFFF; border-radius: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    padding: 24px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .head { display: flex; align-items: center; justify-content: space-between; }
+  .title { font: 600 18px 'IBM Plex Sans'; color: var(--pc-text); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 9999px;
+    background: #E4EDE6; color: #385944;
+    font: 500 13px 'IBM Plex Sans';
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: #5C8F6B; }
+  .row-k { display: flex; justify-content: space-between; font-size: 14px; }
+  .k { color: var(--pc-text-muted); }
+  .v { font-family: 'IBM Plex Mono'; font-variant-numeric: tabular-nums; color: var(--pc-text); font-weight: 500; }
+</style></head><body><div class="card">
+  <div class="demo">
+    <div class="head">
+      <div class="title">Week of 14 Mar</div>
+      <span class="pill"><span class="dot"></span>Matches expected</span>
+    </div>
+    <div class="row-k"><span class="k">Expected</span><span class="v">$1,247.60</span></div>
+    <div class="row-k"><span class="k">Received</span><span class="v">$1,247.60</span></div>
+  </div>
+</div></body></html>

@@ -1,0 +1,20 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Logo</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 24px; justify-content: center; gap: 18px; }
+  .lock { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+  .box { padding: 18px 22px; border-radius: 12px; display: flex; align-items: center; min-height: 60px; }
+  .box.lite { background: #FAF7F2; border: 1px solid #E5E1D8; }
+  .box.dark { background: #1F3A5F; }
+  .note { font-size: 12px; color: var(--pc-text-muted); }
+  img { display: block; }
+</style></head><body><div class="card">
+  <div class="lock">
+    <div class="box lite"><img src="../assets/paychecker-logo.svg" alt="PayChecker" height="36"/></div>
+    <div class="box dark">
+      <!-- inverted: swap fill via currentColor replacement -->
+      <svg viewBox="0 0 360 72" width="180" height="36"><text x="0" y="52" style="font: 600 40px 'IBM Plex Sans'; fill: #FAF7F2; letter-spacing:-0.01em">PayChecker</text><rect x="342" y="42" width="10" height="10" rx="2" fill="#E8B04B"/></svg>
+    </div>
+  </div>
+  <div class="note">Placeholder wordmark. Minimum clear space = height of "P". Minimum size 100px wide on screen.</div>
+</div></body></html>

@@ -1,0 +1,123 @@
+/* PayChecker Design System — colors & type tokens
+   ------------------------------------------------
+   Source of truth. Do not introduce colors outside this file.
+   Typography: IBM Plex Sans / Mono / Serif only.
+*/
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@400;500;600&display=swap');
+
+:root {
+  /* ---------- Color: brand ---------- */
+  --pc-navy:        #1F3A5F;  /* primary, dominant */
+  --pc-navy-hover:  #182E4B;  /* 10% darker, for press/hover */
+  --pc-navy-soft:   #E8EDF4;  /* tinted surface, very sparing */
+  --pc-amber:       #E8B04B;  /* accent + warning (same token) */
+  --pc-amber-soft:  #FBF1DB;  /* amber pill background */
+  --pc-sage:        #5C8F6B;  /* confirm, never triumphant */
+  --pc-sage-soft:   #E4EDE6;  /* sage pill background */
+  --pc-coral:       #C97064;  /* error, used rarely */
+  --pc-coral-soft:  #F5E1DE;  /* coral pill background */
+
+  /* ---------- Color: neutrals ---------- */
+  --pc-bg:          #FAF7F2;  /* page background, warm off-white */
+  --pc-surface:     #FFFFFF;  /* cards */
+  --pc-text:        #1A1D24;  /* body text, charcoal */
+  --pc-text-muted:  #6B7280;  /* secondary */
+  --pc-border:      #E5E1D8;  /* soft warm grey */
+  --pc-border-strong:#CFC8B8; /* used only for emphasis */
+
+  /* ---------- Semantic aliases ---------- */
+  --pc-fg-primary:   var(--pc-text);
+  --pc-fg-secondary: var(--pc-text-muted);
+  --pc-fg-on-navy:   #FFFFFF;
+  --pc-link:         var(--pc-navy);
+  --pc-focus-ring:   var(--pc-navy);
+
+  /* ---------- Type: families ---------- */
+  --pc-font-sans:  'IBM Plex Sans', system-ui, sans-serif;
+  --pc-font-mono:  'IBM Plex Mono', ui-monospace, monospace;
+  --pc-font-serif: 'IBM Plex Serif', Georgia, serif;   /* PDF reports only */
+
+  /* ---------- Type: scale ---------- */
+  --pc-size-display: 32px;
+  --pc-size-h1:      24px;
+  --pc-size-h2:      20px;
+  --pc-size-body:    16px;
+  --pc-size-caption: 14px;
+  --pc-size-micro:   13px;
+
+  --pc-weight-regular:  400;
+  --pc-weight-medium:   500;
+  --pc-weight-semibold: 600;
+
+  --pc-leading-tight:  1.2;
+  --pc-leading-snug:   1.35;
+  --pc-leading-normal: 1.5;
+
+  /* ---------- Spacing (8px base) ---------- */
+  --pc-space-1:  4px;
+  --pc-space-2:  8px;
+  --pc-space-3:  12px;
+  --pc-space-4:  16px;
+  --pc-space-6:  24px;
+  --pc-space-8:  32px;
+  --pc-space-12: 48px;
+  --pc-space-16: 64px;
+  --pc-space-24: 96px;
+
+  /* ---------- Radii ---------- */
+  --pc-radius-input:  12px;
+  --pc-radius-button: 12px;
+  --pc-radius-card:   16px;
+  --pc-radius-pill:   9999px;
+
+  /* ---------- Elevation ---------- */
+  --pc-shadow-card:  0 1px 3px rgba(0,0,0,0.06);
+  --pc-shadow-modal: 0 12px 32px rgba(26,29,36,0.12), 0 2px 6px rgba(26,29,36,0.06);
+  --pc-shadow-focus: 0 0 0 2px var(--pc-focus-ring);
+
+  /* ---------- Motion ---------- */
+  --pc-ease-out:   cubic-bezier(0.2, 0.6, 0.2, 1);
+  --pc-dur-fast:   150ms;
+  --pc-dur-base:   240ms;
+  --pc-dur-slow:   320ms;
+
+  /* ---------- Hit targets ---------- */
+  --pc-tap-min:    48px;
+  --pc-input-h:    52px;
+}
+
+/* ---------- Base reset (light) ---------- */
+html, body {
+  background: var(--pc-bg);
+  color: var(--pc-fg-primary);
+  font-family: var(--pc-font-sans);
+  font-size: var(--pc-size-body);
+  font-weight: var(--pc-weight-regular);
+  line-height: var(--pc-leading-normal);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---------- Semantic type classes ---------- */
+.pc-display { font: var(--pc-weight-semibold) var(--pc-size-display)/var(--pc-leading-tight) var(--pc-font-sans); letter-spacing: -0.01em; }
+.pc-h1      { font: var(--pc-weight-semibold) var(--pc-size-h1)/var(--pc-leading-snug) var(--pc-font-sans); letter-spacing: -0.005em; }
+.pc-h2      { font: var(--pc-weight-semibold) var(--pc-size-h2)/var(--pc-leading-snug) var(--pc-font-sans); }
+.pc-body    { font: var(--pc-weight-regular) var(--pc-size-body)/var(--pc-leading-normal) var(--pc-font-sans); }
+.pc-caption { font: var(--pc-weight-regular) var(--pc-size-caption)/var(--pc-leading-normal) var(--pc-font-sans); color: var(--pc-fg-secondary); }
+.pc-micro   { font: var(--pc-weight-regular) var(--pc-size-micro)/var(--pc-leading-normal) var(--pc-font-sans); color: var(--pc-fg-secondary); letter-spacing: 0.02em; }
+
+/* ---------- Numbers: monospace + tabular ---------- */
+.pc-num {
+  font-family: var(--pc-font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.pc-num-display { font: var(--pc-weight-500) var(--pc-size-display)/1.1 var(--pc-font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+/* ---------- Focus ---------- */
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--pc-shadow-focus);
+  border-radius: 6px;
+}

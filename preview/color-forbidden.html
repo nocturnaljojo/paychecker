@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Forbidden colors</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 20px 24px; gap: 14px; }
+  .head { font-weight: 600; font-size: 15px; }
+  .sub  { font-size: 13px; color: var(--pc-text-muted); margin-top: 2px; }
+  .bad  { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .x {
+    position: relative; height: 56px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    color: rgba(255,255,255,0.95); font-family: var(--pc-font-mono); font-size: 11px;
+  }
+  .x::after {
+    content: ""; position: absolute; inset: 0; border-radius: 10px;
+    background: linear-gradient(135deg, transparent 46%, rgba(26,29,36,0.9) 48%, rgba(26,29,36,0.9) 52%, transparent 54%);
+  }
+</style></head><body><div class="card">
+  <div>
+    <div class="head">Forbidden — do not use</div>
+    <div class="sub">Not even "just this once." These colors carry the wrong associations for a pay-verification tool.</div>
+  </div>
+  <div class="bad">
+    <div class="x" style="background:#FF0000">pure red</div>
+    <div class="x" style="background:#7C3AED">purple</div>
+    <div class="x" style="background:#10B981">fintech mint</div>
+    <div class="x" style="background:#3B82F6">SaaS blue</div>
+    <div class="x" style="background:#39FF14;color:#111">neon</div>
+  </div>
+</div></body></html>

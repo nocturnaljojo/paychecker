@@ -1,0 +1,17 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Semantic colors</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 20px 24px; gap: 14px; }
+  .item { display: grid; grid-template-columns: 56px 1fr auto; align-items: center; gap: 16px; }
+  .chip { width: 56px; height: 40px; border-radius: 10px; border: 1px solid var(--pc-border); }
+  .name { font-weight: 600; font-size: 15px; }
+  .role { font-size: 13px; color: var(--pc-text-muted); margin-top: 2px; }
+  .hex  { font-family: var(--pc-font-mono); font-size: 13px; color: var(--pc-text-muted); }
+</style></head><body><div class="card">
+  <div class="item"><div class="chip" style="background:#E8B04B;border-color:#D39B30"></div>
+    <div><div class="name">Amber</div><div class="role">Accent · warning · "needs attention"</div></div><div class="hex">#E8B04B</div></div>
+  <div class="item"><div class="chip" style="background:#5C8F6B;border-color:#4D7A5A"></div>
+    <div><div class="name">Sage</div><div class="role">Confirm · matches expected · never triumphant</div></div><div class="hex">#5C8F6B</div></div>
+  <div class="item"><div class="chip" style="background:#C97064;border-color:#AE5B50"></div>
+    <div><div class="name">Coral</div><div class="role">Error · rare · muted, never an alert</div></div><div class="hex">#C97064</div></div>
+</div></body></html>

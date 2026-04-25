@@ -1,0 +1,19 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Confidence pills</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 22px 24px; gap: 14px; justify-content: center; }
+  .rowp { display: flex; gap: 10px; flex-wrap: wrap; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 9999px; font: 500 13px 'IBM Plex Sans'; }
+  .high { background:#E4EDE6; color:#385944; } .high .d { background:#5C8F6B; }
+  .med  { background:#FBF1DB; color:#7A5A1E; } .med  .d { background:#E8B04B; }
+  .low  { background:#EFECE3; color:#4B5262; } .low  .d { background:#6B7280; }
+  .d { width: 7px; height: 7px; border-radius: 50%; }
+  .note { font-size: 13px; color: var(--pc-text-muted); }
+</style></head><body><div class="card">
+  <div class="rowp">
+    <span class="pill high"><span class="d"></span>High confidence</span>
+    <span class="pill med"><span class="d"></span>Medium confidence</span>
+    <span class="pill low"><span class="d"></span>Low confidence — more inputs needed</span>
+  </div>
+  <div class="note">Every calculated number carries a confidence pill. Low confidence shows a range ($280–$620), not a point estimate.</div>
+</div></body></html>

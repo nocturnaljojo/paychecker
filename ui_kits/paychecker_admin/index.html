@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PayChecker Admin — UI Kit</title>
+<link rel="stylesheet" href="../../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #FAF7F2; }
+  .app { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .content { flex: 1; overflow: auto; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" src="Components.jsx"></script>
+  <script type="text/babel" src="WorkerDetail.jsx"></script>
+  <script type="text/babel" src="AuditLog.jsx"></script>
+  <script type="text/babel" src="Rules.jsx"></script>
+  <script type="text/babel">
+    const { useState } = React;
+
+    function App() {
+      const [nav, setNav] = useState(() => localStorage.getItem('pc_admin_nav') || 'dashboard');
+      const [workerOpen, setWorkerOpen] = useState(false);
+      const [impersonate, setImpersonate] = useState(false);
+      const go = n => { setNav(n); setWorkerOpen(false); localStorage.setItem('pc_admin_nav', n); };
+
+      const titles = {
+        dashboard: { t: "Dashboard", s: "Pay checks, flags, and data health." },
+        workers:   { t: workerOpen ? "Worker" : "Workers", s: workerOpen ? "Single pane of glass for supporting a worker." : "All worker accounts and their latest flags." },
+        flags:     { t: "Flags", s: "Calculated differences surfaced to workers." },
+        uploads:   { t: "Uploads", s: "Inbound payslips, awaiting parse or review." },
+        rules:     { t: "Rules", s: "Temporal reference data · versioned, never overwritten." },
+        audit:     { t: "Audit log", s: "Every admin action, append-only, retained 7 years." },
+        settings:  { t: "Settings", s: "Operator preferences and data retention." },
+      }[nav];
+
+      return (
+        <div className="app">
+          <Sidebar active={nav} onChange={go}/>
+          <div className="main">
+            <ATopBar title={titles.t} subtitle={titles.s}/>
+            <div className="content">
+              {nav === 'dashboard' && <DashboardScreen/>}
+              {nav === 'workers' && !workerOpen && <WorkersScreen onOpenWorker={() => setWorkerOpen(true)}/>}
+              {nav === 'workers' &&  workerOpen && <WorkerDetail onClose={() => setWorkerOpen(false)} onImpersonate={() => setImpersonate(true)}/>}
+              {nav === 'rules' && <RulesScreen/>}
+              {nav === 'audit' && <AuditLog/>}
+              {(nav === 'flags' || nav === 'uploads' || nav === 'settings') && <WorkersScreen onOpenWorker={() => { go('workers'); setWorkerOpen(true); }}/>}
+            </div>
+          </div>
+          {impersonate && <ImpersonateOverlay onClose={() => setImpersonate(false)}/>}
+        </div>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

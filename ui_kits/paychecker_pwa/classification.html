@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PayChecker — Document classification safety net</title>
+<link rel="stylesheet" href="../../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="Components.jsx"></script>
+  <script type="text/babel" src="Screens.jsx"></script>
+  <script type="text/babel" src="YourData.jsx"></script>
+  <script type="text/babel" src="Payslip.jsx"></script>
+  <script type="text/babel" src="Super.jsx"></script>
+  <script type="text/babel" src="Classify.jsx"></script>
+
+  <script type="text/babel">
+    const PhoneFrame = ({ children, overlay }) => (
+      <div style={{
+        width: 390, height: 780, background: "#FAF7F2",
+        borderRadius: 42, overflow: "hidden", position: "relative",
+        boxShadow: "0 20px 50px rgba(26,29,36,0.18), 0 2px 8px rgba(26,29,36,0.06)",
+        border: "10px solid #1A1D24",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div style={{
+          height: 38, display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 22px", font: "600 14px 'IBM Plex Sans'", color: "#1A1D24", background: "#FAF7F2",
+        }}>
+          <span>9:41</span>
+          <span style={{ fontSize: 12, color: "#6B7280" }}>●●●●  ●●●  100%</span>
+        </div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+          {children}
+          {overlay}
+        </div>
+      </div>
+    );
+
+    const noop = () => {};
+
+    // YourData with universal-add card on top (preview)
+    const YourDataWithUniversal = () => (
+      <>
+        <TopBar title="Your data"/>
+        <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+          <UniversalAddCard onAdd={noop} onShowHelp={noop}/>
+          <div style={{
+            padding: "4px 4px", font: "500 11px 'IBM Plex Mono'", textTransform: "uppercase",
+            letterSpacing: "0.08em", color: "#6B7280", marginTop: 6,
+          }}>
+            Or pick a bucket
+          </div>
+          {BUCKETS.slice(0, 3).map(b => (
+            <div key={b.key} style={{
+              background: "#fff", border: "1px solid #E5E1D8", borderRadius: 14, padding: "14px 16px",
+              display: "flex", alignItems: "center", gap: 12,
+            }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: 10, background: "#F5F1E7", color: "#4B5262",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>
+                <Icon name={b.icon} size={18} strokeWidth={1.75}/>
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ font: "600 14px 'IBM Plex Sans'", color: "#1A1D24" }}>{b.name}</div>
+                <div style={{ font: "400 12px 'IBM Plex Sans'", color: "#6B7280" }}>{b.id} · {b.primary}</div>
+              </div>
+              <Icon name="chevron" size={18} color="#9B9485"/>
+            </div>
+          ))}
+        </div>
+      </>
+    );
+
+    // Payslip extraction preview with wrong-bucket banner prepended
+    const PayslipWithWrongBucket = () => (
+      <>
+        <TopBar title="Check details" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "12px 16px 0" }}>
+            <WrongBucketBanner chosenBucket="payslips" detectedBucket="bank" confidencePct={91} onMove={noop} onDismiss={noop}/>
+          </div>
+          <ExtractionPreviewScreen onSave={noop} onCancel={noop} onShowSource={noop}/>
+        </div>
+      </>
+    );
+
+    function App() {
+      return (
+        <DesignCanvas>
+
+          {/* ============ 1. Universal upload + classify ============ */}
+          <DCSection id="universal" title="Universal upload &amp; classify"
+            subtitle='"Add a document" accepts anything. AI classifies from extracted content, then asks "This looks like a [payslip]. Is that right?" with chips for each bucket. Confirm or override. Never blocks save.'>
+
+            <DCArtboard id="u0" label="0 · Your data — universal entry" width={410} height={800}>
+              <PhoneFrame><YourDataWithUniversal/></PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="u1" label="1 · Add a document" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Add a document" left={<IconButton icon="chevronL" ariaLabel="Back"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <UniversalUploadChoice onPick={noop} onBack={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="u2" label="2 · Classify · high confidence (payslip)" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Is that right?" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <ClassifyResult classification={SAMPLE_CLASSIFICATIONS.payslip_high} filename="payslip-2026-03-16.jpg"
+                    onConfirm={noop} onOverride={noop} onCancel={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="u3" label="3 · Classify · high confidence (super)" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Is that right?" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <ClassifyResult classification={SAMPLE_CLASSIFICATIONS.super_high} filename="austsuper-march-2026.pdf"
+                    onConfirm={noop} onOverride={noop} onCancel={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="u4" label="4 · Classify · medium confidence" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Is that right?" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <ClassifyResult classification={SAMPLE_CLASSIFICATIONS.payslip_med} filename="IMG_0421.jpg"
+                    onConfirm={noop} onOverride={noop} onCancel={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="u5" label="5 · Classify · low confidence / ambiguous" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Pick a category" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <ClassifyResult classification={SAMPLE_CLASSIFICATIONS.ambiguous} filename="scan_002.pdf"
+                    onConfirm={noop} onOverride={noop} onCancel={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="u6" label="6 · Classify · unsupported" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="We're not sure" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <ClassifyResult classification={SAMPLE_CLASSIFICATIONS.unsupported} filename="photo_9382.heic"
+                    onConfirm={noop} onOverride={noop} onCancel={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+          </DCSection>
+
+          {/* ============ 2. Auto-verify on bucket-specific upload ============ */}
+          <DCSection id="auto-verify" title="Auto-verify on bucket-specific upload"
+            subtitle='Per-bucket "Add payslip" / "Add super statement" flows stay. After extraction, if the document doesn&apos;t match the chosen bucket, an amber banner appears offering to move it. One tap, no scolding.'>
+
+            <DCArtboard id="v1" label="1 · Payslip upload — turns out to be bank statement" width={410} height={800}>
+              <PhoneFrame><PayslipWithWrongBucket/></PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="v2" label="2 · Banner only (component spec)" width={410} height={380}>
+              <div style={{ padding: 24, background: "#FAF7F2", height: "100%", display: "flex", flexDirection: "column", gap: 16 }}>
+                <WrongBucketBanner chosenBucket="payslips" detectedBucket="bank" confidencePct={91} onMove={noop} onDismiss={noop}/>
+                <WrongBucketBanner chosenBucket="super" detectedBucket="payslips" confidencePct={82} onMove={noop} onDismiss={noop}/>
+                <WrongBucketBanner chosenBucket="bank" detectedBucket="contract" confidencePct={77} onMove={noop} onDismiss={noop}/>
+              </div>
+            </DCArtboard>
+          </DCSection>
+
+          {/* ============ 3. Move between buckets ============ */}
+          <DCSection id="move" title="Move between buckets"
+            subtitle='From any saved doc, "Not the right category?" opens a sheet of bucket chips. Moving preserves the original upload timestamp and logs the move in event history. Affected comparisons are re-run and the worker sees which ones changed.'>
+
+            <DCArtboard id="m1" label="1 · Move sheet" width={410} height={800}>
+              <PhoneFrame overlay={<MoveBucketSheet doc={{title: "Transactions · Mar 2026", currentBucket: "payslips", uploadedAt: "16 Mar 2026"}} onMove={noop} onClose={noop}/>}>
+                <TopBar title="Payslip detail" left={<IconButton icon="chevronL" ariaLabel="Back"/>}/>
+                <div style={{ padding: 20, color: "#9B9485", font: "400 13px 'IBM Plex Sans'" }}>
+                  (Payslip detail — edit menu triggered this sheet)
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="m2" label="2 · Moved — affected comparisons" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Moved"/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <MoveConfirmationScreen fromBucket="payslips" toBucket="bank" onBack={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="m3" label="3 · Moved — super → payslips variant" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Moved"/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <MoveConfirmationScreen
+                    fromBucket="super" toBucket="payslips"
+                    docTitle="Pay advice · 16 Mar 2026"
+                    uploadedAt="16 Mar 2026 · 14:22"
+                    affected={[
+                      { label: "Super owed vs paid",   action: "recalculating" },
+                      { label: "Full pay comparison",  action: "newly possible" },
+                    ]}
+                    onBack={noop}
+                  />
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+          </DCSection>
+
+          {/* ============ 4. "Not sure what you have?" ============ */}
+          <DCSection id="help" title="&quot;Not sure what you have?&quot; reference sheet"
+            subtitle="Linked from every upload screen. Bottom sheet with tiny visual example of each doc type, plus a one-line description. Tap a card to start a new upload pre-filed into that bucket.">
+
+            <DCArtboard id="h1" label="1 · Help sheet (from upload)" width={410} height={800}>
+              <PhoneFrame overlay={<WhatDoYouHaveSheet onClose={noop} onPick={noop}/>}>
+                <TopBar title="Add a document" left={<IconButton icon="chevronL" ariaLabel="Back"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <UniversalUploadChoice onPick={noop} onBack={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="h2" label="2 · Help sheet (from classify)" width={410} height={800}>
+              <PhoneFrame overlay={<WhatDoYouHaveSheet onClose={noop} onPick={noop}/>}>
+                <TopBar title="Pick a category" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <ClassifyResult classification={SAMPLE_CLASSIFICATIONS.ambiguous}
+                    onConfirm={noop} onOverride={noop} onCancel={noop} onShowHelp={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+          </DCSection>
+
+          {/* Notes */}
+          <DCPostIt top={20} left={20} width={280}>
+            <strong>Classification never blocks save</strong><br/>
+            Confidence is always visible. The worker always has final say — even on &quot;unsupported&quot; we let them pick a bucket and keep going. AI guesses, human decides.
+          </DCPostIt>
+          <DCPostIt top={210} left={20} width={280} rotate={1.2}>
+            <strong>Three entry paths, one outcome</strong><br/>
+            Universal upload → classify → bucket-specific extraction.<br/>
+            Bucket-specific upload → extraction with wrong-bucket banner if mismatch.<br/>
+            Saved-doc edit menu → move bucket.<br/>
+            All routes converge on the same extraction &amp; save pipeline.
+          </DCPostIt>
+          <DCPostIt top={420} left={20} width={280} rotate={-1.4}>
+            <strong>Classification signals</strong><br/>
+            super &middot; &quot;Superannuation guarantee contribution&quot;, fund name, member number<br/>
+            payslip &middot; &quot;Gross pay&quot;, &quot;Ordinary hours&quot;, YTD<br/>
+            bank &middot; transaction list + BSB/account<br/>
+            contract &middot; &quot;Offer of employment&quot;, terms, signature block
+          </DCPostIt>
+          <DCPostIt top={640} left={20} width={280} rotate={0.6}>
+            <strong>Move preserves history</strong><br/>
+            Original upload timestamp is kept. The move itself is a separate logged event. Affected comparisons are re-run; newly-possible comparisons are surfaced on the confirmation screen.
+          </DCPostIt>
+        </DesignCanvas>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PayChecker — PWA UI Kit</title>
+<link rel="stylesheet" href="../../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #F0ECE2; }
+  body { display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; box-sizing: border-box; }
+  .phone {
+    width: 390px; height: 780px; background: #FAF7F2;
+    border-radius: 42px; overflow: hidden; position: relative;
+    box-shadow: 0 24px 60px rgba(26,29,36,0.2), 0 4px 16px rgba(26,29,36,0.08);
+    border: 10px solid #1A1D24;
+    display: flex; flex-direction: column;
+  }
+  .status {
+    height: 38px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; font: 600 14px 'IBM Plex Sans'; color: #1A1D24;
+    background: #FAF7F2;
+  }
+  .app { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .scroll { flex: 1; overflow-y: auto; overflow-x: hidden; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" src="Components.jsx"></script>
+  <script type="text/babel" src="Screens.jsx"></script>
+  <script type="text/babel" src="YourData.jsx"></script>
+  <script type="text/babel" src="Payslip.jsx"></script>
+  <script type="text/babel" src="Shifts.jsx"></script>
+  <script type="text/babel" src="Onboarding.jsx"></script>
+  <script type="text/babel">
+    const { useState } = React;
+
+    function App() {
+      const [screen, setScreen] = useState(() => localStorage.getItem('pc_screen') || 'onboarding');
+      const [tab, setTab] = useState('home');
+      const [why, setWhy] = useState(false);
+      const [sourceField, setSourceField] = useState(undefined); // undefined=closed, null=no field, {...}=field
+      const [provField, setProvField] = useState(null);
+      const [activeShift, setActiveShift] = useState(null);
+      const go = s => { setScreen(s); localStorage.setItem('pc_screen', s); };
+      const handleTab = id => {
+        setTab(id);
+        if (id === 'home') go('home');
+        else if (id === 'yourdata') go('yourdata');
+        else if (id === 'shifts') go('shifts');
+        else if (id === 'payslips') go('yourdata');
+      };
+
+      const StatusBar = () => (
+        <div className="status">
+          <span>9:41</span>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+            <span>●●●●</span><span>●●●</span><span>100%</span>
+          </div>
+        </div>
+      );
+
+      let content, showTabs = false, top;
+      if (screen === 'onboarding') {
+        content = <OnboardingFlow onComplete={() => go('yourdata')} onSkipAll={() => go('yourdata')}/>;
+      } else if (screen === 'home') {
+        showTabs = true;
+        top = <TopBar title="PayChecker" right={<IconButton icon="user" ariaLabel="Account"/>}/>;
+        content = <HomeScreen onOpenWeek={() => go('week')} onUpload={() => go('upload')}/>;
+      } else if (screen === 'yourdata') {
+        showTabs = true;
+        top = <TopBar title="Your data"/>;
+        content = <YourDataScreen onOpenBucket={(key) => go(key === 'payslips' ? 'upload-choice' : 'upload')}/>;
+      } else if (screen === 'upload-choice') {
+        top = <TopBar title="Add payslip" left={<IconButton icon="chevronL" ariaLabel="Back" onClick={() => go('yourdata')}/>}/>;
+        content = <UploadChoiceScreen onPick={() => go('extract')} onBack={() => go('yourdata')}/>;
+      } else if (screen === 'extract') {
+        top = <TopBar title="Check details" left={<IconButton icon="x" ariaLabel="Cancel" onClick={() => go('yourdata')}/>}/>;
+        content = <ExtractionPreviewScreen
+          onSave={() => go('saved')}
+          onCancel={() => go('upload-choice')}
+          onShowSource={(f) => setSourceField(f)}
+        />;
+      } else if (screen === 'saved') {
+        top = <TopBar title="Saved"/>;
+        content = <ExtractionSavedScreen onSeeComparison={() => go('week')} onBack={() => go('yourdata')}/>;
+      } else if (screen === 'week') {
+        showTabs = true;
+        top = <TopBar title="Week detail" left={<IconButton icon="chevronL" ariaLabel="Back" onClick={() => go('home')}/>}/>;
+        content = <WeekDetailScreen onBack={() => go('home')} onWhy={() => setWhy(true)}/>;
+      } else if (screen === 'upload') {
+        top = <TopBar title="Upload" left={<IconButton icon="x" ariaLabel="Cancel" onClick={() => go('home')}/>}/>;
+        content = <UploadScreen onCancel={() => go('home')} onDone={() => go('week')}/>;
+      } else if (screen === 'shifts') {
+        showTabs = true;
+        top = <TopBar title="Shifts"/>;
+        content = <ShiftsListScreen
+          onOpenShift={(s) => { setActiveShift(s); go('shift-detail'); }}
+          onLog={() => go('log-shift')}
+          onBatch={() => go('batch-shifts')}/>;
+      } else if (screen === 'log-shift') {
+        top = <TopBar title="Log shift" left={<IconButton icon="x" ariaLabel="Cancel" onClick={() => go('shifts')}/>}/>;
+        content = <LogShiftScreen
+          onSave={() => go('shifts')}
+          onSaveAndNext={() => go('log-shift')}
+          onCancel={() => go('shifts')}/>;
+      } else if (screen === 'batch-shifts') {
+        top = <TopBar title="Log multiple" left={<IconButton icon="chevronL" ariaLabel="Back" onClick={() => go('shifts')}/>}/>;
+        content = <BatchEntryScreen onSave={() => go('shifts')} onCancel={() => go('shifts')}/>;
+      } else if (screen === 'shift-detail') {
+        top = <TopBar title="Shift" left={<IconButton icon="chevronL" ariaLabel="Back" onClick={() => go('shifts')}/>}/>;
+        content = <ShiftDetailScreen
+          shift={activeShift || SAMPLE_SHIFTS[0]}
+          onBack={() => go('shifts')}
+          onEdit={() => go('log-shift')}
+          onDelete={() => go('shifts')}
+          onNeverHappened={() => go('shifts')}/>;
+      }
+
+      const activeTab = ['shifts','log-shift','batch-shifts','shift-detail'].includes(screen) ? 'shifts'
+        : screen === 'yourdata' ? 'yourdata'
+        : tab;
+
+      return (
+        <div className="phone">
+          <StatusBar/>
+          <div className="app">
+            {top}
+            <div className="scroll">{content}</div>
+            {showTabs && <TabBar active={activeTab} onChange={handleTab}/>}
+            {why && <WhySheet onClose={() => setWhy(false)}/>}
+            {sourceField !== undefined && <SourcePreviewSheet field={sourceField} onClose={() => setSourceField(undefined)}/>}
+            {provField && <FieldProvenanceSheet field={provField} onClose={() => setProvField(null)} onEdit={() => setProvField(null)} onDelete={() => setProvField(null)} onReport={() => setProvField(null)}/>}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

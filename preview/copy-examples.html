@@ -1,0 +1,20 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Copy examples</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 20px 24px; gap: 12px; }
+  .grid-c { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .box { border-radius: 12px; padding: 14px 16px; }
+  .bad  { background: #F5E1DE; border: 1px solid #E8C6C0; }
+  .good { background: #E4EDE6; border: 1px solid #C9DBCE; }
+  .tag  { font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--pc-text-muted); margin-bottom: 6px; font-family: var(--pc-font-mono); }
+  .quote { font-size: 15px; line-height: 1.45; color: var(--pc-text); }
+  .bad .tag  { color: #7A3B33; }
+  .good .tag { color: #385944; }
+</style></head><body><div class="card">
+  <div class="grid-c">
+    <div class="box bad"><div class="tag">Don't</div><div class="quote">You have been underpaid.</div></div>
+    <div class="box good"><div class="tag">Do</div><div class="quote">Difference between expected and received: $47.60</div></div>
+    <div class="box bad"><div class="tag">Don't</div><div class="quote">Anomaly detected.</div></div>
+    <div class="box good"><div class="tag">Do</div><div class="quote">Something looks different this week.</div></div>
+  </div>
+</div></body></html>

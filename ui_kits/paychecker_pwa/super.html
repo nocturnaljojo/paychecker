@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>PayChecker — Super statement upload (Bucket D)</title>
+<link rel="stylesheet" href="../../colors_and_type.css"/>
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+</style>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="Components.jsx"></script>
+  <script type="text/babel" src="Screens.jsx"></script>
+  <script type="text/babel" src="YourData.jsx"></script>
+  <script type="text/babel" src="Payslip.jsx"></script>
+  <script type="text/babel" src="Super.jsx"></script>
+
+  <script type="text/babel">
+    const PhoneFrame = ({ children, overlay }) => (
+      <div style={{
+        width: 390, height: 780, background: "#FAF7F2",
+        borderRadius: 42, overflow: "hidden", position: "relative",
+        boxShadow: "0 20px 50px rgba(26,29,36,0.18), 0 2px 8px rgba(26,29,36,0.06)",
+        border: "10px solid #1A1D24",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div style={{
+          height: 38, display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "0 22px", font: "600 14px 'IBM Plex Sans'", color: "#1A1D24", background: "#FAF7F2",
+        }}>
+          <span>9:41</span>
+          <span style={{ fontSize: 12, color: "#6B7280" }}>●●●●  ●●●  100%</span>
+        </div>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
+          {children}
+          {overlay}
+        </div>
+      </div>
+    );
+
+    const noop = () => {};
+
+    // Scroll to bottom helper for showing later rows + summary
+    const ScrolledRowSelection = ({ scrollTo = 1400 }) => {
+      const ref = React.useRef(null);
+      React.useEffect(() => { if (ref.current) ref.current.scrollTop = scrollTo; }, [scrollTo]);
+      return (
+        <>
+          <TopBar title="Confirm rows" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+          <div ref={ref} style={{ flex: 1, overflowY: "auto" }}>
+            <SuperRowSelection onSave={noop} onCancel={noop} onShowSource={noop}/>
+          </div>
+        </>
+      );
+    };
+
+    // Variant: all unchecked (worker un-selected a row to preview state change)
+    const CustomSelectionDemo = () => {
+      const customStatement = {
+        ...SAMPLE_SUPER_STATEMENT,
+        // Keep same rows, just render the screen
+      };
+      return (
+        <>
+          <TopBar title="Confirm rows" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <SuperRowSelection statement={customStatement} onSave={noop} onCancel={noop} onShowSource={noop}/>
+          </div>
+        </>
+      );
+    };
+
+    // Row for source preview — pick a "fuzzy match" row to show it's saveable-but-amber
+    const fuzzyRow = SAMPLE_SUPER_STATEMENT.rows.find(r => r.employerMatch === "fuzzy");
+    const otherEmployerRow = SAMPLE_SUPER_STATEMENT.rows.find(r => r.employerMatch === "none" && r.type === "Employer contribution");
+
+    function App() {
+      return (
+        <DesignCanvas>
+          <DCSection id="bucket-d" title="Bucket D · Super statement upload"
+            subtitle="Reuses the Workflow C pattern — extract, confirm, delete raw. New: row-level selection. A statement holds contributions from multiple employers plus rollovers, fees, insurance, and earnings — only confirmed-employer contributions save. Everything else is discarded at save time and never uploaded.">
+
+            <DCArtboard id="d1" label="1 · Upload choice" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Add statement" left={<IconButton icon="chevronL" ariaLabel="Back"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <SuperUploadChoice onPick={noop} onBack={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="d2a" label="2 · Row selection (top)" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Confirm rows" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <SuperRowSelection onSave={noop} onCancel={noop} onShowSource={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="d2b" label="2 · Row selection (scrolled — other rows + summary)" width={410} height={800}>
+              <PhoneFrame><ScrolledRowSelection scrollTo={1600}/></PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="d2c" label="2 · Source provenance (fuzzy match)" width={410} height={800}>
+              <PhoneFrame overlay={<SuperSourceSheet row={fuzzyRow} onClose={noop}/>}>
+                <TopBar title="Confirm rows" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <SuperRowSelection onSave={noop} onCancel={noop} onShowSource={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="d2d" label="2 · Source provenance (different employer — caution)" width={410} height={800}>
+              <PhoneFrame overlay={<SuperSourceSheet row={otherEmployerRow} onClose={noop}/>}>
+                <TopBar title="Confirm rows" left={<IconButton icon="x" ariaLabel="Cancel"/>}/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <SuperRowSelection onSave={noop} onCancel={noop} onShowSource={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+
+            <DCArtboard id="d3" label="3 · Saved — super verification unlocked" width={410} height={800}>
+              <PhoneFrame>
+                <TopBar title="Saved"/>
+                <div style={{ flex: 1, overflowY: "auto" }}>
+                  <SuperSavedScreen onSeeComparison={noop} onBack={noop}/>
+                </div>
+              </PhoneFrame>
+            </DCArtboard>
+          </DCSection>
+
+          <DCPostIt top={20} left={20} width={260}>
+            <strong>Reuses Workflow C wholesale</strong><br/>
+            UploadMethodCard, ConfidencePill, source-preview sheet, Button, TopBar, Icon — all shared with payslip flow. New parts: SuperRow with checkbox + MatchPill, SuperSavedScreen with unlock callout.
+          </DCPostIt>
+          <DCPostIt top={200} left={20} width={260} rotate={1.5}>
+            <strong>Row selection defaults</strong><br/>
+            Rows default-checked only when employerMatch is exact (name + ABN) or fuzzy (ABN matches, name abbreviated). Rows from other employers and non-contributions default-unchecked — worker can still tick them if they want.
+          </DCPostIt>
+          <DCPostIt top={380} left={20} width={260} rotate={-1.5}>
+            <strong>Never nag</strong><br/>
+            "Different employer" pill is amber, not red. Non-contribution rows are shown in a separate group with a calm copy line — not hidden, not scolded. The worker is in charge.
+          </DCPostIt>
+          <DCPostIt top={560} left={20} width={260} rotate={0.8}>
+            <strong>At save</strong><br/>
+            Raw PDF deleted. Unchecked rows discarded (never uploaded). Only checked, employer-contribution rows persist. Comparisons 6 &amp; 7 unlock — the saved screen leads with this.
+          </DCPostIt>
+        </DesignCanvas>
+      );
+    }
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Inputs</title>
+<link rel="stylesheet" href="_card.css">
+<style>
+  .card { padding: 20px 24px; gap: 14px; justify-content: center; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .label-i { font-size: 14px; font-weight: 500; color: var(--pc-text); }
+  .hint { font-size: 13px; color: var(--pc-text-muted); }
+  .input {
+    height: 52px; padding: 0 16px; border-radius: 12px;
+    background: #FFFFFF; border: 1px solid #E5E1D8;
+    font: 400 16px 'IBM Plex Sans'; color: var(--pc-text);
+    outline: none;
+  }
+  .input.focus { box-shadow: 0 0 0 2px #1F3A5F; border-color: transparent; }
+  .grid-i { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+</style></head><body><div class="card">
+  <div class="grid-i">
+    <div class="field">
+      <span class="label-i">Hourly rate</span>
+      <input class="input" placeholder="Enter amount"/>
+      <span class="hint">Before tax · in dollars</span>
+    </div>
+    <div class="field">
+      <span class="label-i">Classification</span>
+      <input class="input focus" value="Level 2 · Food & beverage"/>
+      <span class="hint">Tap to change</span>
+    </div>
+  </div>
+</div></body></html>
