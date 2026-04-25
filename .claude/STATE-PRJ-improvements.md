@@ -44,4 +44,12 @@
 
 ## Open improvements
 
-_None yet — first improvement goes here._
+### INFRA-001 — Bundle the Node + React + Vite + TS upgrade
+- **Severity:** LOW
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-26 by Jovi (s002)
+- **What:** Upgrade Node 20.17 → 22.x, React 18.3 → 19, Vite 5.4 → 8, TypeScript 5.6 → 6 — bundle as a single Phase 1 dependency-upgrade sprint rather than four separate decisions.
+- **Why:** Phase 0 deliberately pinned to mature stable majors (proven shadcn/Tailwind ecosystem, Node-engine compatible). Phase 1 will eventually want the modern stack; bundling avoids four mid-flight breakages.
+- **Effort:** M
+- **Dependencies:** Tailwind v3 → v4 likely required at the same time; shadcn CLI patterns will have moved on by then.
