@@ -15,6 +15,7 @@ Locked stack details. Single source of truth for tech, hosting region, version p
 | postcss / autoprefixer | latest | Tailwind v3 build pipeline |
 | tailwindcss-animate | ^1.0.7 | shadcn animation utilities |
 | react-router-dom | ^6 | the v6 API; v7 may follow with React 19 |
+| @clerk/clerk-react | ^5.61 | client-side auth (Phase 0). No server verification yet — Phase 1 backend will validate Clerk JWTs server-side. Publishable key only in `.env.local` as `VITE_CLERK_PUBLISHABLE_KEY`; secret key NEVER in this project until Phase 1 backend exists |
 | eslint | ^8.57.0 | ESLint 10 requires Node ≥20.19; matches React 18 era |
 | @typescript-eslint/* | ^8.0.0 | TS 5.6 compatible |
 | eslint-plugin-react-hooks | ^4.6.0 | React 18 era |
