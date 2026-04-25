@@ -4,6 +4,7 @@ import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
 import SignIn from '@/pages/SignIn'
 import SignUp from '@/pages/SignUp'
+import ProtectedRoute from '@/components/layout/ProtectedRoute'
 
 function App() {
   return (
@@ -13,7 +14,14 @@ function App() {
         <Route path="/sign-in/*" element={<SignIn />} />
         <Route path="/sign-up/*" element={<SignUp />} />
         <Route path="/onboarding" element={<Onboarding />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
       </Routes>
     </BrowserRouter>
   )
