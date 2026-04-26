@@ -105,3 +105,43 @@ Three improvements logged in `.claude/STATE-PRJ-improvements.md`:
 The audit in hour 3 caught one drift (PLAN vs design mock). Hour 4 reduces the chance of that being a one-off catch by giving future audits explicit anchor docs: a personas file to reason from, an ADR record to check decisions against, a risks register to cross-reference, and a pressure-test skill that runs before code is written rather than after. The same finding from hour 3 should now be detectable in 5 minutes by anyone walking the file map, not 30 minutes of reading post-it notes inside a JSX mock.
 
 LATEST.md still points at this retro (hour 4 appended in place — same session, same retro file, per the s002 retro precedent).
+
+---
+
+## Hour 5 — Dashboard Tier 1 polish
+
+Read-only UI/UX divergence audit (mock files vs live React) ran first. 30-item divergence inventory produced; user approved Tier 1 only (10 specific changes across 3 files, ~15-min budget). Tier 2/3/4 explicitly deferred. No refactoring beyond the listed changes.
+
+### What was done
+
+Three commits, each scoped to a single file:
+
+1. **`Step2What.tsx` — Verify-card stroke parity (T1-O1).** Check icon strokeWidth 2 → 1.75 to match the IconTile default used by Wallet + Calendar in the same screen and by mock's `IconTile` in `Onboarding.jsx`.
+2. **`Button.tsx` — secondary variant outlined (T1-B1).** `bg-pc-navy-soft text-pc-navy` → `bg-white border border-pc-navy text-pc-navy`. Three-variant system (filled / outlined / text) now matches mock `Components.jsx:65`. Hover on the outlined goes to `pc-navy-soft` for the press hint.
+3. **`Dashboard.tsx` — eight grouped changes (T1-D1..T1-D8).** Header title "Hi, {firstName}." → "What's in, what's missing." (drops unused `useUser` import). New "Your data buckets" section label in mono uppercase. New footer reassurance line. BucketCard now: dashed border for the empty state, muted icon tile (was always navy), bucket.id mono badge next to name (A/B/F/D/E preserving the `workflows.md` letter codes), capture options moved to its own line at the bottom in mono uppercase, primary CTA promoted to full-width `Button variant="primary" block`.
+
+### Verification
+
+- `npm run build` clean: 1709 modules, 16.83 kB CSS / 4.40 kB gzipped, 494.14 kB JS / 141.59 kB gzipped. CSS up ~+0.4 kB for the new utilities; JS effectively unchanged (~+0.17 kB).
+- TypeScript clean (no unused imports left over after removing `useUser`).
+- Onboarding 6-screen flow untouched in behaviour; Step 2 visually matches across all three InfoCards now.
+- Dashboard preserves all existing behaviour: 5 bucket cards still tappable, toast still fires "{primary} — Phase 0, not wired yet" with 2.4-second auto-dismiss, `UserButton` still in header.
+
+Browser-level verification (`npm run dev` → http://localhost:5173 → sign in → /dashboard) is the user's pass; build + TS confirm code correctness, not visual feel.
+
+### What was deliberately NOT touched
+
+Per execution rules — these were prioritised in the audit and the user explicitly deferred them:
+
+- **T2-L1** (Landing rebuild as worker-hero per `Screens.jsx`, or keep as dev-facing entry) — needs a product decision; deferred to tomorrow morning fresh.
+- **T2-O2** (mock comment update reflecting consent-mandatory Skip semantics) — deferred; documentation hygiene, not code.
+- **T2-D9 / T2-D10** ("I've uploaded everything I have" + "Add later" affordances) — affordances are tied to a status taxonomy we don't have wired yet (`partial`/`complete`/`acknowledged`/`gap`); shipping them as no-op buttons would teach the worker an interaction we'd remove later. Wait for Tier 4.
+- **T2-INPUT** (52px input height per design-system promise) — deferred polish; current MiniField renders ~48px.
+- **All Tier 3** (Button press feedback, BucketCard padding nit, Toast slide animation, easing token wiring, TopBar extraction). Opportunistic polish bank; revisit when in area.
+- **All Tier 4** (UnlockedSummary card, rich bucket states with `lastUpload`/`gapMessage`, bottom TabBar, TopBar shared component, HomeScreen / WeekDetailScreen / WhySheet / UploadScreen patterns from `Screens.jsx`, all bucket-detail flows, phone-frame width capping). These are Phase 0+ deferred features, not divergences.
+
+### Why this matters
+
+The audit flagged ~30 divergences. Most were Phase 0+ deferred features dressed up as polish gaps. Tier 1's discipline was filtering 30 → 10 items that genuinely change how the app *feels* without adding scope. The result on `/dashboard` should now read as the calm-bucket-status home the mock describes, not a placeholder grid — same behaviour, better signal.
+
+LATEST.md still points at this retro (hour 5 appended in place).
