@@ -56,11 +56,11 @@
 - **Dependencies:** Tailwind v3 → v4 likely required at the same time; shadcn CLI patterns will have moved on by then.
 
 ### INFRA-002 — Flip Vercel Deployment Protection to "Only Preview"
-- **Severity:** LOW
+- **Severity:** MED
 - **Source:** audit
 - **Status:** OPEN
 - **Found:** 2026-04-26 by Jovi (s002 hour 1)
-- **What:** Currently the team's SAML SSO gates every uncached path on production deployments (verified after Hour 1 push — `/`, `/dashboard` returned cached 200s; `/onboarding`, `/design-system/` hit the SSO gate uncached). Once Clerk auth becomes the production gate, flip Project → Settings → Deployment Protection to "Only Preview Deployments" so production is publicly accessible.
+- **What:** Currently the team's SAML SSO gates every uncached path on production deployments (verified after Hour 1 push — `/`, `/dashboard` returned cached 200s; `/onboarding`, `/design-system/` hit the SSO gate uncached). Once Clerk auth becomes the production gate, flip Project → Settings → Deployment Protection to "Only Preview Deployments" so production is publicly accessible. **Re-rated MEDIUM 2026-04-26 s003h6: will hard-block Apete signup at Phase 0 ship. Re-rate to HIGH when Phase 0 comparison engine is complete.**
 - **Why:** PALM workers can't sign up if production requires Vercel SSO. Gate decision must come from Clerk (worker-facing), not Vercel SSO (operator-facing).
 - **Effort:** S (single dashboard toggle)
 - **Dependencies:** Clerk auth shipped (now done, s002 hour 2).

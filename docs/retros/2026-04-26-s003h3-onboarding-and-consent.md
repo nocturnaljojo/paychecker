@@ -145,3 +145,21 @@ Per execution rules — these were prioritised in the audit and the user explici
 The audit flagged ~30 divergences. Most were Phase 0+ deferred features dressed up as polish gaps. Tier 1's discipline was filtering 30 → 10 items that genuinely change how the app *feels* without adding scope. The result on `/dashboard` should now read as the calm-bucket-status home the mock describes, not a placeholder grid — same behaviour, better signal.
 
 LATEST.md still points at this retro (hour 5 appended in place).
+
+---
+
+## Hour 6 — PLAN/state housekeeping
+
+Stocktake report (s003h6 conversation, ~9:30pm) surfaced two documentation issues:
+
+1. **PLAN/retro drift.** Six Phase 0 tasks shipped in s003h3 but `PLAN-PRJ-mvp-phases.md` checkboxes remained unchecked. PLAN now reflects reality: educational onboarding 6 screens + consent capture, `workers.country` + `preferred_language` columns, `consent_records` table, "Your data" home screen at `/dashboard`, smoke-test upload moved to `/debug`, and the privacy policy v1 placeholder are all ticked.
+
+2. **Schema-violating PLAN task order.** Layer 1 facts capture (was PLAN:29) was listed before the MA000074 research note (PLAN:32) and award + award_rates seed (PLAN:33). But `worker_classification_facts.award_id` is `NOT NULL REFERENCES awards(id)`: Layer 1 facts cannot be inserted until an `awards` row exists. Reordered to **research → seed → Layer 1/2/3 facts capture** with an inline HTML comment above the reordered block explaining the FK-constraint reasoning so future-Claude can read the receipt without re-deriving.
+
+Plus a header note at the top of `PLAN-PRJ-mvp-phases.md`: "Last refreshed against retro reality: 2026-04-26 (s003h6). Phase 0 progress: 11/21 tasks shipped. Next chain: MA000074 research → award seed → Layer 1 facts capture."
+
+**INFRA-002** (Vercel SSO flip) re-rated LOW → MED in `STATE-PRJ-improvements.md`. Will hard-block Apete signup at Phase 0 ship; current LOW rating misrepresented urgency. The entry's description gains a re-rating note: "Re-rate to HIGH when Phase 0 comparison engine is complete." That's the trigger to bump severity again.
+
+Zero code or schema changes this hour. Two state files + one retro append, in a single commit.
+
+LATEST.md still points at this retro file (hour 6 appended in place per the s002 retro precedent).
