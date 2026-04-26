@@ -36,7 +36,7 @@ export function Step2What({ onBack, onNext, onSkip }: Props) {
           body="Know what's coming. Enough to plan ahead."
         />
         <InfoCard
-          icon={<Check size={22} strokeWidth={2} />}
+          icon={<Check size={22} strokeWidth={1.75} />}
           tone="sage"
           title="Verify"
           body="Check the numbers match what should have happened. We show you; you decide."
