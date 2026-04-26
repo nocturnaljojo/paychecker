@@ -6,21 +6,17 @@ import { supabaseUrl, supabaseAnonKey } from '@/config/supabase'
 /**
  * Supabase browser client wired to Clerk JWTs.
  *
- * The `accessToken` callback (supabase-js >= 2.45) is invoked on every
- * request, so Supabase always sees a fresh Clerk JWT — no manual refresh
- * loop needed. RLS policies read the Clerk user id via:
+ * Identity comes from Clerk via Supabase third-party auth: Supabase is
+ * configured to accept Clerk session tokens (JWKS-validated at Clerk's
+ * Frontend API URL), no shared secret, no JWT template. `getToken()`
+ * returns the vanilla Clerk session JWT; supabase-js's `accessToken`
+ * callback (>=2.45) injects it on every request.
  *
- *     auth.jwt() ->> 'sub'
+ * RLS policies read the Clerk user id via `auth.jwt() ->> 'sub'` which
+ * matches `workers.clerk_user_id`.
  *
- * which matches `workers.clerk_user_id`. We do NOT use Supabase's own
- * session storage (no email/password sign-up via Supabase) so
- * persistSession + autoRefreshToken are off.
- *
- * Setup prerequisite: a Clerk JWT template named `supabase` must exist
- * in the Clerk dashboard, signed with the Supabase project's JWT secret.
- * If the template is missing, getToken() returns null and Supabase falls
- * back to the anon key — which means RLS-protected reads return zero
- * rows. This is loud-by-design.
+ * persistSession + autoRefreshToken are off — Clerk owns the session
+ * lifecycle; Supabase is purely a JWT consumer here.
  */
 
 export function createSupabaseClient(
@@ -39,7 +35,7 @@ export function createSupabaseClient(
 export function useSupabaseClient(): SupabaseClient {
   const { getToken } = useAuth()
   return useMemo(
-    () => createSupabaseClient(() => getToken({ template: 'supabase' })),
+    () => createSupabaseClient(() => getToken()),
     [getToken],
   )
 }
