@@ -19,6 +19,7 @@
 | `SKILL-PRJ-retro.md` | Writing the session retro |
 | `SKILL-PRJ-idea-to-execution.md` | ANY new feature / idea / architectural direction |
 | `SKILL-PRJ-audit-before-build.md` | Before adding code in an unfamiliar area |
+| `SKILL-PRJ-pressure-test.md` | Pre-build failure-mode surfacing — runs between idea-to-execution steps 4 and 5 |
 | `SKILL-AWARD-add-new.md` | Adding a new Modern Award |
 | `SKILL-FACT-confirmation.md` | Building any flow that captures or confirms a worker fact |
 | `SKILL-DOC-extraction.md` | Building OCR / Claude extraction pipelines |
@@ -49,11 +50,19 @@
 ## Docs (`../docs/`)
 
 - `retros/` — `LATEST.md` + dated session retros (`YYYY-MM-DD-sNNN-topic.md`)
-- `product/` — buckets, workflows, positioning, pricing
-- `architecture/` — fact model, memory stack, confirmation flow
+- `product/` — buckets, workflows, positioning, pricing, **personas (who PayChecker serves)**
+- `architecture/` — fact model, memory stack, confirmation flow, **decisions (ADRs)**, **risks (failure modes by design)**
 - `planning/` — phase success criteria
 - `research/` — awards research notes
 - `operations/` — billing actions, ops runbooks
+
+### Key docs by name
+
+| File | Topic |
+|---|---|
+| `product/personas.md` | Apete + household + paid-tier + advocate. The humans behind every default. |
+| `architecture/decisions.md` | ADR records — every architectural choice with context, options, decision, consequences. |
+| `architecture/risks.md` | R-NNN failure modes the system must defend against by design. |
 
 ## Tasks & scripts
 

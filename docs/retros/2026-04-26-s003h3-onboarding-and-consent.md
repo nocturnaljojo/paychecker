@@ -78,3 +78,30 @@ Two added to `tasks/lessons.md`:
 `(1)` and `(4)`/`(5)` need an "Add a fact" UX pattern that respects `SKILL-FACT-confirmation.md` (pre-fill OK, pre-confirm never; provenance visible; confirmed_at set on explicit confirm only). Worth running idea-to-execution on that pattern as a single design decision before building three screens that share it.
 
 LATEST.md updated → points at this retro.
+
+---
+
+## Hour 4 — Doc gaps closed (personas, ADRs, risks, pressure-test)
+
+External research surfaced four doc gaps in PayChecker's `.claude/` + `docs/` corpus that the existing files alluded to but never centralised. Each is now addressed in a single place. **No code changes this hour** — this is documentation infrastructure that future feature work will lean on.
+
+What was added:
+
+1. **`docs/product/personas.md`** — pins the humans. Apete (primary Phase 0), Apete's household (Phase 1 cohort), the future paid-tier worker (Phase 2), the friend/advocate (secondary, sees output without an account). Plus design implications: tone (year-9 reading, no legal terms, diagnostic framing, no streak/gamification), defaults (privacy-first, mobile-first, Pacific Islander cultural lens), and the edge cases the design must handle (employer in same community, shared device, no Medicare/TFN, advocate reads PDF cold, friend buddy-onboarding without data leak).
+2. **`docs/architecture/decisions.md`** — eight ADRs covering the foundational and recent architectural choices. ADR-001 confirmation model is sacred. ADR-002 3-layer fact model. ADR-003 information tool, not advice tool. ADR-004 Clerk + Supabase third-party auth. ADR-005 indexing not looping. ADR-006 orient, don't collect (s003h3). ADR-007 two gates before surfacing mismatches. ADR-008 single Supabase project per environment. Append-only; supersession over edit.
+3. **`docs/architecture/risks.md`** — nine risks the system must defend against by design. R-001 OCR extracts wrong numbers (Phase 5). R-002 award rates stale on FWC update. R-003 worker confirms wrong value. R-004 abusive employer accesses worker account (HIGH residual — software cannot fully mitigate). R-005 worker treats output as legal advice. R-006 Privacy Act breach via support/debugging. R-007 comparisons table grows unbounded. R-008 device dies/lost. R-009 bulk-upload feature gap (NEW — the per-bucket CTAs are the answer; LLM doc-classification stays out of scope until ADR-1 review).
+4. **`.claude/skills/SKILL-PRJ-pressure-test.md`** — pre-build failure-mode surfacing. Runs between steps 4 and 5 of `SKILL-PRJ-idea-to-execution.md`. Five prompts: break the system (5 ways), simulate 3 personas, what would Apete misunderstand (with 2 wording fixes per misreading), Privacy Act + R-004 worker-safety pass, reversibility check. Output is a `## PRESSURE TEST` section appended to the session retro; concerns blocking ship escalate before any code.
+
+Three improvements logged in `.claude/STATE-PRJ-improvements.md`:
+
+- **RES-001** — Investigate "Live App Wiki" / claims-citations layer for Phase 5+. Auto-summarised narrative pages built from confirmed_facts + RAG retrieval over those summaries + citation chain back to source documents. Validates against ADR-001 and ADR-005. Defer until Apete is using Phase 0 in real life.
+- **INFRA-004** — Account recovery plan. 2FA + recovery codes + paper printout for Clerk / Supabase / Vercel / GitHub. Solo-founder single-point-of-failure mitigation. Pre-Phase-1.
+- **INFRA-005** — PWA manifest + offline shell. Installable on mobile home screen. Apete-shaped: regional NSW patchy data. Phase 0.9 / pre-Apete-handoff.
+
+`.claude/INDEX.md` updated to surface the four new files (skills table got `SKILL-PRJ-pressure-test`; Docs section now points to personas, decisions, and risks by name).
+
+### Why this matters
+
+The audit in hour 3 caught one drift (PLAN vs design mock). Hour 4 reduces the chance of that being a one-off catch by giving future audits explicit anchor docs: a personas file to reason from, an ADR record to check decisions against, a risks register to cross-reference, and a pressure-test skill that runs before code is written rather than after. The same finding from hour 3 should now be detectable in 5 minutes by anyone walking the file map, not 30 minutes of reading post-it notes inside a JSX mock.
+
+LATEST.md still points at this retro (hour 4 appended in place — same session, same retro file, per the s002 retro precedent).

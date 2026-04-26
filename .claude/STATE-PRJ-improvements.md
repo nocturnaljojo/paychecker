@@ -16,6 +16,7 @@
 - `audit` — surfaced by the auditor agent
 - `demo-prep` — found while preparing a demo
 - `claude-review` — flagged by Claude during a review pass
+- `research` — surfaced by an external research note or competitive scan
 
 ## Status legend
 
@@ -83,3 +84,33 @@
 - **Why:** Likely Vite dev-server SPA fallback intercepting `/design-system/` before resolving the static `public/design-system/index.html`. React Router does NOT catch it (no route matches `/design-system/`). Workaround for now: hit `/design-system/index.html` directly, or use `npm run preview`.
 - **Effort:** S — likely a `vite.config.ts` middleware / `appType: 'mpa'` flag, or a small dev-only Express middleware. Worth a 30-minute investigation.
 - **Dependencies:** None — doesn't block any Phase 0 work because the design system isn't actively edited from the React dev loop.
+
+### RES-001 — "Live App Wiki" / claims-citations layer (Phase 5+ research)
+- **Severity:** LOW
+- **Source:** research
+- **Status:** OPEN
+- **Found:** 2026-04-26 by Jovi (s003h4)
+- **What:** Investigate a "Live App Wiki" / claims-citations layer. Pattern: auto-summarised narrative pages built from `confirmed_facts`; RAG retrieval over those summaries when the worker asks "why does the report say X?"; every claim cites back to the source document(s) and confirmed facts that produced it.
+- **Why:** Validates against ADR-001 (citations preserve provenance — the LLM remains a synthesiser, never authoritative) and ADR-005 (narrative summaries are themselves an index, not a full-history dump). Could materially improve readability for the advocate persona who reads a comparison report cold. Defer until Phase 0 is in real-worker hands so the design is informed by actual usage rather than a hypothesis.
+- **Effort:** L (research-heavy investigation; not a build task yet)
+- **Dependencies:** Phase 0 ships and Apete uses for ≥4 pay periods — gates the design with real surface area.
+
+### INFRA-004 — Account recovery plan for solo-founder operational accounts
+- **Severity:** LOW
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-26 by Jovi (s003h4)
+- **What:** Document where Clerk, Supabase, Vercel, and GitHub credentials live (password manager once INFRA-003 ships); enable 2FA on each; confirm recovery email is current; print recovery codes and store in a safe place.
+- **Why:** Solo founder = single point of failure. Losing access to any one of the four = a production outage that's hard to recover from quickly, with no second person to fall back on. Cheap insurance; the runbook protects future-Jovi from a forgotten phone or a stolen laptop.
+- **Effort:** S (one operations runbook + actual setup of 2FA recovery codes; ~1 hour).
+- **Dependencies:** INFRA-003 (password manager). Recovery codes belong in the manager, not in screenshots.
+
+### INFRA-005 — PWA manifest + offline shell (installable on mobile home screen)
+- **Severity:** LOW
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-26 by Jovi (s003h4)
+- **What:** Add a Web App Manifest + a basic service worker so PayChecker is installable on a worker's mobile home screen with an offline shell. "Real mobile app feel" without app-store deployment.
+- **Why:** Apete-shaped: regional NSW, patchy data, an installed-on-home-screen PWA reads as a "real app" and survives intermittent connectivity for the read-only shell. Full offline sync (write-while-disconnected) is the Phase 5 ask in `PLAN-PRJ-mvp-phases.md`; this entry is the smaller wedge — install + offline shell only — that lands pre-Apete-handoff.
+- **Effort:** S (manifest + minimal service worker for offline shell; ~half-day).
+- **Dependencies:** None.
