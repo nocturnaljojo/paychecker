@@ -20,12 +20,20 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` complete · `[!]` blocked
 - [x] Set up Supabase project (Sydney region — ap-southeast-2) (project `paychecker` / `zzppuwyufloobskinehf`, ap-southeast-2; created prior to s003)
 - [x] Set up Clerk auth (test mode) (s002 hour 2 — @clerk/clerk-react@^5.61, ClerkProvider + sign-in/up + ProtectedRoute + auth-aware Landing; verified end-to-end with test account "Jovilisi")
 - [x] Define DB schema in `.claude/ref/REF-DB-schema.md` and apply migrations (s003 — `0002_phase0_full_schema` + `0003_payslips_storage_bucket`; 17 tables, RLS via Clerk-JWT helper, audit triggers, immutable comparisons; smoke-tested 14/14 + 2/2 defense-in-depth)
-- [ ] Build worker onboarding (Layer 1 facts capture)
-- [ ] Build shift logging (Layer 2 facts)
-- [ ] Build manual payslip entry (Layer 3 facts)
-- [ ] Build Poultry Processing Award MA000074 reference data
+- [ ] Build educational onboarding (6 screens) + consent capture (per design mock; orient-don't-collect; captures name + optional country/language only)
+- [ ] Add `country` + `preferred_language` columns to `workers` (migration 0004)
+- [ ] Create `consent_records` table (immutable; per APP-1/APP-6 audit obligation)
+- [ ] Build "Your data" home screen at `/dashboard` (5 worker-facing bucket stubs per `YourData.jsx`)
+- [ ] Move smoke-test upload UI to `/debug` (env-gated, dev-only)
+- [ ] Privacy policy v1 placeholder route at `/privacy` (real content blocks ship-to-real-worker)
+- [ ] Layer 1 facts capture (employer + classification + pay terms) — manual entry inside the "Employment contract" bucket flow
+- [ ] Build shift logging (Layer 2 facts) — "Shifts" bucket flow
+- [ ] Build manual payslip entry (Layer 3 facts) — "Payslips" bucket flow
+- [ ] Research note for MA000074 (`docs/research/awards-ma000074-v01.md` via `researcher` agent + `SKILL-AWARD-add-new.md`)
+- [ ] Build Poultry Processing Award MA000074 reference data (seed `awards` + `award_rates`)
 - [ ] Build comparison engine v1 (rate, hours, OT)
 - [ ] Build basic PDF report (IBM Plex Serif, sentence-case)
+- [ ] Privacy policy v1 — real content (research-heavy; cannot ship to a real worker without it)
 - [ ] Apete uses for 4 consecutive pay periods
 - [ ] Third-party reviewer (union/WWSP) confirms accuracy
 
