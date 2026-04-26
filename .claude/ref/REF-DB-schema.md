@@ -4,7 +4,9 @@
 Source of truth for the Supabase schema. Update this file in the same commit as any migration. Drift between this file and `supabase/migrations/` is a P1 audit finding.
 
 ## Status
-**Phase 0 schema — DRAFT.** No migrations applied yet. The shapes below are the starting design, to be refined when Phase 0 scaffolding begins.
+**Phase 0 schema — APPLIED.** Migrations `0001` (superseded), `0002_phase0_full_schema`, and `0003_payslips_storage_bucket` are live in `supabase/migrations/` and on the Supabase project. RLS smoke-tested 14/14 user-role tests + 2/2 trigger defense-in-depth tests pass (s003).
+
+Migration history note: `0001_profiles_and_admin_helper` was applied direct-to-DB on 2026-04-25 (before this repo had `supabase/migrations/`). It built a Supabase-Auth-keyed `profiles` table that is incompatible with our Clerk-JWT auth model. `0002` drops every artifact `0001` created (table, helpers, triggers) and replaces them with the schema below. The `0001` SQL is committed verbatim purely for audit-trail visibility — never replay it on a fresh DB; replay starts at `0002`.
 
 ## Conventions
 - All ids `uuid` with `default gen_random_uuid()`.
@@ -134,12 +136,19 @@ Immutable snapshots.
 
 ## Row-Level Security (RLS)
 
-- Workers can SELECT only rows where `worker_id = auth.uid()`.
-- Workers can INSERT into fact tables and `documents` for their own `worker_id`.
-- Workers can UPDATE their own fact rows (which unsets `confirmed_at` per trigger).
-- Workers cannot DELETE; soft-delete via `deleted_at` only.
-- Admin role: full read; no write to fact tables (audit trail integrity).
-- Service role (extraction agent): writes only to `extraction_staging`.
+Identity comes from the Clerk JWT, not Supabase Auth. The Clerk JWT template named `supabase` carries `sub` = Clerk user id and `role` = `authenticated`. RLS policies dereference identity via `auth.jwt() ->> 'sub'` (NOT `auth.uid()` — that's Supabase Auth's user id, which is empty for us).
+
+A `STABLE` SQL helper `public.current_worker_id()` resolves the JWT sub to a `workers.id`, used by every downstream policy.
+
+- `workers`: SELECT/INSERT/UPDATE allowed only where `clerk_user_id = auth.jwt() ->> 'sub'`. No DELETE.
+- `employers`, `awards`, `award_rates`: signed-in workers can SELECT shared reference data; only `employers` allows INSERT (for ad-hoc onboarding). Awards write via service role / migrations.
+- `documents`: SELECT/INSERT/UPDATE for `worker_id = current_worker_id()`. No DELETE — soft-delete via `deleted_at`.
+- `extraction_staging`: SELECT only for the document owner. INSERT only via service role (extraction agent).
+- `*_facts` (Layer 1, 2, 3): SELECT/INSERT/UPDATE for own rows. No DELETE.
+- `*_facts_history`: SELECT only for the fact owner. INSERTs come exclusively from BEFORE-UPDATE triggers (`SECURITY DEFINER`, bypass RLS). Triggers are the only write path.
+- `comparisons`: SELECT/INSERT only. UPDATE/DELETE rejected by trigger (so even service role can't mutate). RLS additionally blocks user-role UPDATE/DELETE silently (no policy → zero rows).
+
+Storage RLS (bucket `payslips`, see migration `0003`): `(storage.foldername(name))[1] = current_worker_id()::text` for SELECT/INSERT/UPDATE, scoped to `bucket_id = 'payslips'`. No DELETE.
 
 ## Triggers
 

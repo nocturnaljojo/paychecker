@@ -75,3 +75,36 @@ Two related gotchas hit in one paste:
 Operational rule baked in: `.env.local.example` documents what NOT to
 put in the file (commented at the bottom of the example). Future-self
 reading the example will see the secret-key warning before they paste.
+
+### 2026-04-26 — s003 — `auth.jwt() ->> 'sub'` is not `auth.uid()`
+
+`auth.uid()` returns the Supabase-Auth user id, which is `NULL` when
+identity is provided by Clerk (sign-in goes through Clerk; Supabase
+sees only the JWT). PayChecker's `REF-DB-schema.md` originally said
+`worker_id = auth.uid()` (a Supabase-Auth-default reflex). Real
+RLS policies must read `auth.jwt() ->> 'sub'`, the Clerk user id
+that the Clerk JWT template puts into the `sub` claim.
+
+Pattern: a `STABLE` SQL helper `public.current_worker_id()` resolves
+the JWT sub to the local `workers.id`. Every downstream policy filters
+on `worker_id = (SELECT public.current_worker_id())`. The `(SELECT ...)`
+wrapping lets the planner cache the helper's result per statement.
+
+Repeat this for any third-party-auth integration (Clerk, Auth0, custom
+JWT issuer): the dereference is `auth.jwt()`, not `auth.uid()`.
+
+### 2026-04-26 — s003 — `PERFORM` is PL/pgSQL-only; raw SQL needs `SELECT`
+
+The first attempt at the RLS smoke-test SQL used
+`PERFORM pg_temp.record(...);` at top level (between
+`SET LOCAL ROLE authenticated;` and inserts). Postgres rejected it
+with `syntax error at or near "PERFORM"`. `PERFORM` is a PL/pgSQL
+keyword that throws away the result of a SELECT — only valid inside
+`DO` blocks or function bodies.
+
+Workaround: at top level, use `SELECT pg_temp.record(...);` (the void
+return is discarded silently by the SQL executor). Inside `DO $$ ... $$`
+blocks, `PERFORM` works as expected.
+
+Future-self: when batch-scripting a multi-step SQL audit, watch for
+this transition between top-level SQL and embedded PL/pgSQL.

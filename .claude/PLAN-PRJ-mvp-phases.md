@@ -17,9 +17,9 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` complete · `[!]` blocked
 
 - [x] Set up React + Vite + TypeScript + Tailwind base (s002 — at root; design system moved to `public/design-system/`)
 - [x] Wire shadcn/ui and import design tokens from `colors_and_type.css` (s002 — manual base; CLI deferred to INFRA-001 due to Tailwind v4 requirement)
-- [ ] Set up Supabase project (Sydney region — ap-southeast-2)
+- [x] Set up Supabase project (Sydney region — ap-southeast-2) (project `paychecker` / `zzppuwyufloobskinehf`, ap-southeast-2; created prior to s003)
 - [x] Set up Clerk auth (test mode) (s002 hour 2 — @clerk/clerk-react@^5.61, ClerkProvider + sign-in/up + ProtectedRoute + auth-aware Landing; verified end-to-end with test account "Jovilisi")
-- [ ] Define DB schema in `.claude/ref/REF-DB-schema.md` and apply migrations
+- [x] Define DB schema in `.claude/ref/REF-DB-schema.md` and apply migrations (s003 — `0002_phase0_full_schema` + `0003_payslips_storage_bucket`; 17 tables, RLS via Clerk-JWT helper, audit triggers, immutable comparisons; smoke-tested 14/14 + 2/2 defense-in-depth)
 - [ ] Build worker onboarding (Layer 1 facts capture)
 - [ ] Build shift logging (Layer 2 facts)
 - [ ] Build manual payslip entry (Layer 3 facts)
