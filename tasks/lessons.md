@@ -93,6 +93,34 @@ wrapping lets the planner cache the helper's result per statement.
 Repeat this for any third-party-auth integration (Clerk, Auth0, custom
 JWT issuer): the dereference is `auth.jwt()`, not `auth.uid()`.
 
+### 2026-04-26 — s003h3 — Audit catches plan-vs-mock drift that file names hide
+
+`PLAN-PRJ-mvp-phases.md` said "Build worker onboarding (Layer 1 facts
+capture)". The design mock's filename — `onboarding.html` — matched.
+But the mock *contents* (post-it notes verbatim: "Orient, don't collect.
+No employer / classification / rate / deductions forms.") explicitly
+contradicted the PLAN. If the audit had only checked filenames + table-
+of-contents, it would have signed off; I'd have built a 3-step Layer 1
+wizard, contradicting design intent and creating worker-safety risk
+(asking PALM workers for award classification before orienting them).
+
+The skill's pitfall ("auditing only file names, not contents") is real,
+not theoretical. Future-self: open every file in the audit set. Read
+the post-it notes / JSX comments / leading-paragraph notes — those are
+load-bearing intent annotations, not decoration.
+
+### 2026-04-26 — s003h3 — Worker-safety reasoning belongs in the architecture
+
+"Don't ask a PALM worker for their award classification before orienting
+them" reads as a UX preference unless you've seen the regulatory + power-
+asymmetry framing in `REF-PRIVACY-baseline.md`. The design system encodes
+the "orient, don't collect" rule via post-it annotations on the mock.
+
+Future-self: when a design mock has narrative annotations alongside the
+visual design (post-its, comments in JSX, leading paragraphs in HTML
+mocks), treat them as load-bearing constraints — they exist because
+someone foresaw a regression. Don't optimize them away in translation.
+
 ### 2026-04-26 — s003 — `PERFORM` is PL/pgSQL-only; raw SQL needs `SELECT`
 
 The first attempt at the RLS smoke-test SQL used
