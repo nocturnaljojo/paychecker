@@ -24,7 +24,19 @@ The user identity (linked to Clerk).
 - `clerk_user_id text unique not null`
 - `display_name text`
 - `tier text check (tier in ('palm_free', 'aud_paid'))`
+- `country text` (added 0004 — optional, captured at onboarding)
+- `preferred_language text default 'en'` (added 0004 — captured at onboarding)
 - `created_at`, `updated_at`
+
+### `consent_records`
+Immutable record of each affirmative consent action (APP-1 + APP-6 audit obligation). One row per consent event; never updated, never deleted.
+- `id uuid pk`
+- `worker_id uuid fk workers`
+- `privacy_policy_version text not null`
+- `consented_at timestamptz not null default now()`
+- `user_agent text` (nullable — captured client-side via `navigator.userAgent`)
+- `ip_address inet` (nullable — Phase 1 backend will populate from `x-forwarded-for`; Phase 0 leaves null)
+- RLS: SELECT/INSERT for own worker only. UPDATE/DELETE rejected by trigger (immutable).
 
 ### `employers`
 - `id uuid pk`
