@@ -12,7 +12,7 @@ const variantClasses: Record<Variant, string> = {
   primary:
     'bg-pc-navy text-white hover:bg-pc-navy-hover active:bg-pc-navy-hover',
   secondary:
-    'bg-pc-navy-soft text-pc-navy hover:bg-pc-border',
+    'bg-white border border-pc-navy text-pc-navy hover:bg-pc-navy-soft',
   tertiary:
     'bg-transparent text-pc-text-muted hover:text-pc-text',
 }
