@@ -114,3 +114,16 @@
 - **Why:** Apete-shaped: regional NSW, patchy data, an installed-on-home-screen PWA reads as a "real app" and survives intermittent connectivity for the read-only shell. Full offline sync (write-while-disconnected) is the Phase 5 ask in `PLAN-PRJ-mvp-phases.md`; this entry is the smaller wedge — install + offline shell only — that lands pre-Apete-handoff.
 - **Effort:** S (manifest + minimal service worker for offline shell; ~half-day).
 - **Dependencies:** None.
+
+### INFRA-006 — REVOKE EXECUTE on `*_history` SECURITY DEFINER trigger functions
+- **Severity:** LOW
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-27 by Jovi (s003h7 / Sprint 2.5)
+- **What:** Pre-existing finding caught by Supabase advisor (rules 0028 + 0029) during Sprint 2 verification: 5 `SECURITY DEFINER` trigger functions from migration 0002 (`log_bdf_history`, `log_psf_history`, `log_scf_history`, `log_sf_history`, `log_wcf_history`) are exposed via `/rest/v1/rpc/...` to anon + authenticated roles. They are trigger-only by design; never meant to be RPC-callable.
+- **Why:** Defense in depth — `SECURITY DEFINER` functions intended for trigger-only invocation should not have an RPC surface, even if calling them directly would error (OLD/NEW are undefined outside trigger context). Closes the lint surface; aligns with principle of least privilege.
+- **Sprint 2.5 attempt (migration 0006, applied 2026-04-27):** `REVOKE EXECUTE ON FUNCTION public.log_*_history() FROM anon, authenticated;` for all five functions. Migration applied successfully but **the advisor lints did NOT clear** — same 10 WARN entries remain.
+- **Diagnosis (the Postgres trap):** function `EXECUTE` is granted to `PUBLIC` by default at function creation time. `PUBLIC` is a pseudo-role that implicitly includes every role including `anon` and `authenticated`. `REVOKE EXECUTE ... FROM anon, authenticated` is a no-op when the actual grant chain is via `PUBLIC`. The lint reports the effective callability (anon CAN call → flagged), and the effective callability is unchanged after REVOKE FROM specific roles.
+- **Sprint 2.6 fix:** new migration with `REVOKE EXECUTE ON FUNCTION public.log_*_history() FROM PUBLIC;` (the canonical fix). Optionally explicit `REVOKE FROM anon, authenticated;` belt-and-braces. Re-run advisor; expect 10 lints to clear.
+- **Effort:** S (~5 min — one migration with 5 REVOKE-FROM-PUBLIC statements).
+- **Dependencies:** None. Trigger semantics unaffected (the trigger machinery invokes via the table owner's privileges, not via `PUBLIC`).
