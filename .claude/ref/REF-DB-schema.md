@@ -62,6 +62,23 @@ Time-bounded rates per classification.
 - `pay_basis text check (pay_basis in ('hourly', 'weekly', 'piece'))`
 - `amount numeric(10,2)`
 - `effective_from date`, `effective_to date`
+- `unique (award_id, classification_code, pay_basis, effective_from)` (added 0005 — idempotent re-seed)
+
+### `award_allowances`
+Time-bounded allowance reference data, parallel to `award_rates` per ADR-010. The `purpose` enum (per ADR-009) tells the calc engine whether the allowance folds into the hourly rate before penalty/OT/leave multipliers apply (`all_purpose`), is paid on top after (`additive`), folds into OT base only (`penalty_modifier`), or is paid only when a context predicate is met (`one_off`). Created 2026-04-27 per ADR-010 (Sprint 2).
+- `id uuid pk`
+- `award_id uuid fk awards (on delete restrict)`
+- `code text not null` (e.g. `LEADING_HAND_1_19`, `COLD_WORK_BAND_LOW`)
+- `description text not null` (worker-facing label)
+- `amount numeric(10,2) not null`
+- `unit text not null check (unit in ('hour', 'week', 'shift'))`
+- `purpose text not null default 'additive' check (purpose in ('all_purpose', 'additive', 'penalty_modifier', 'one_off'))`
+- `fwc_clause text not null` (e.g. `17.2(b)(i)`)
+- `effective_from date not null`, `effective_to date` (nullable)
+- `created_at timestamptz not null default now()`
+- `unique (award_id, code, effective_from)`
+- Index: `(award_id, effective_from, effective_to)` for the calc-engine fetch path.
+- RLS: SELECT for any signed-in worker; no INSERT/UPDATE/DELETE policies — writes via service role / migrations only (mirrors `award_rates`).
 
 ### `worker_classification_facts` (Layer 1)
 - `id uuid pk`

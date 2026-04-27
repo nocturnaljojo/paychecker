@@ -29,6 +29,8 @@ The first source of truth is the FWC published award document, not a third-party
 - Save full notes to `docs/research/awards-{maNNNN}-vNN.md`.
 - Encode rates / allowances / clauses as structured data in the DB. Do not encode as code.
 - Every row gets: `effective_from`, `effective_to`, `source_doc_url`, `extracted_by`, `confirmed_by`.
+- **Allowances and classifications seed together per FWC variation order, never separately.** A variation that updates rates also updates allowance amounts effective the same date — partial seeds risk effective-date drift between `award_rates` and `award_allowances`. The seed migration treats the variation as one atomic unit: classifications, all-purpose allowances, additive allowances, penalty-modifier allowances all carry the same `effective_from` from the same FWC variation order (PR-NNNNNN).
+- **Only seed firmly-sourced rows.** Any value flagged `[SOURCE NEEDED]` in the research note stays out of the seed. Partial coverage (`PARTIAL` status in `REF-AWARDS-list.md`) is honest; fake coverage is a worker-safety risk (R-005 — worker treats output as advice; bad data is worse than no data).
 
 ### 4. Tests
 - Build worked-example tests from the FWC's own examples or union-published examples.
