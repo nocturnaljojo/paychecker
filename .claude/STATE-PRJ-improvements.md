@@ -121,6 +121,17 @@
 - **Status:** CLOSED
 - **Found:** 2026-04-27 by Jovi (s003h7 / Sprint 2.5)
 - **Closed:** 2026-04-27 by migration `0007_revoke_history_functions_from_public.sql` (Sprint 2.6). `REVOKE FROM PUBLIC` cleared all 10 advisor lints (rules 0028 + 0029); trigger semantics confirmed intact via in-DB smoke test (insert worker + employer + shift_fact, UPDATE the shift_fact, observe a row in `shift_facts_history` — 1 row written, rolled back).
+
+### INFRA-007 — Install `poppler` / `pdftotext` for PDF extraction in research workflow
+- **Severity:** MED
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-27 by Jovi (s003h8 / Sprint 3)
+- **What:** Sprint 3 hit a hard wall trying to extract Schedule A definitions for MA000074. The FWC publishes consolidated awards as long single-page HTML that the `WebFetch` extractor truncates before reaching the Schedules; the FWC exposure-draft PDFs are image-encoded with no embedded text layer; the environment lacks `pdftoppm` / `pdftotext` (`Read` tool errors with "pdftoppm not found"). Every web-accessible path failed identically — see `docs/research/awards-ma000074-v02.md` §X for the full sourcing log.
+- **Why:** Every future award research pass (`MA000059` Meat Industry — Phase 3; `MA000009` Hospitality — Phase 2; `MA000028` Horticulture — Phase 4) will hit this same wall when their Schedules need verbatim extraction. One-time tooling install unblocks all of them. Without it, every award costs an extra ~15 min of manual browser-download + paste per Schedule.
+- **Effort:** S (~5 min one-time install: `poppler` package via the local platform's package manager, expose `pdftoppm` and `pdftotext` on `PATH`).
+- **Closes:** the immediate gap blocking v02 Schedule A definitions for MA000074, AND unblocks all future award Schedule A research workflows.
+- **Verification path once installed:** re-run Sprint 3's failed step — `WebFetch` saves the FWC PDF locally, `Read` invokes `pdftoppm`, Schedule A.1/A.2/A.3 verbatim text returns, v02 captures it. Same flow works for any subsequent award.
 - **What:** Pre-existing finding caught by Supabase advisor (rules 0028 + 0029) during Sprint 2 verification: 5 `SECURITY DEFINER` trigger functions from migration 0002 (`log_bdf_history`, `log_psf_history`, `log_scf_history`, `log_sf_history`, `log_wcf_history`) are exposed via `/rest/v1/rpc/...` to anon + authenticated roles. They are trigger-only by design; never meant to be RPC-callable.
 - **Why:** Defense in depth — `SECURITY DEFINER` functions intended for trigger-only invocation should not have an RPC surface, even if calling them directly would error (OLD/NEW are undefined outside trigger context). Closes the lint surface; aligns with principle of least privilege.
 - **Sprint 2.5 attempt (migration 0006, applied 2026-04-27):** `REVOKE EXECUTE ON FUNCTION public.log_*_history() FROM anon, authenticated;` for all five functions. Migration applied successfully but **the advisor lints did NOT clear** — same 10 WARN entries remain.
