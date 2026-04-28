@@ -357,3 +357,131 @@ Operational spec lives in `docs/architecture/add-fact-pattern.md` (1–16 sectio
 - **Sprint 6.x retrofit candidates (NOT in this sprint, but flagged in `add-fact-pattern.md`).** `Step6Consent.tsx` `name` prefill missing provenance label (Rule 2.1 violation). `OnboardingFlow.tsx:24` keeps wizard state in `useState` only — won't survive resume. `Step1-5` use "Continue" / "Get started" buttons rather than "Confirm" — those are orientation screens (no fact captured), so the "Confirm" rule technically doesn't apply, BUT future tuning may want to align language even there.
 - **Cross-references.** ADR-001 (confirmation sacred — Rule 4 obeys), ADR-005 (indexing not looping — AFTERMATH doesn't render full history), ADR-006 (orient don't collect — ENTRY one-line carries the orientation), ADR-007 (two gates — pattern feeds the gate-1 confirmation requirement), `SKILL-FACT-confirmation` (Rule 4.1 implements its "Confirm button" mandate), `confirmation-flow.md` (Rule 2.2 + Rule 5.1 implement the proposed/confirmed/edited state machine).
 - **Banked Sprint-6.x candidates.** Five worth surfacing for future polish sprints, not this one: (i) Step6Consent provenance label retrofit; (ii) OnboardingFlow `proposed`-state persistence retrofit; (iii) Step1-5 button-language audit; (iv) `Pill` 5-state taxonomy import from mock; (v) `Money` component as input variant for Sprint 9.
+
+---
+
+### AMENDMENT — Sprint A1 (2026-04-29)
+
+**Status:** Amended by ADR-013.
+
+**Source:** ADR-013 + `docs/architecture/document-intelligence-plan-v01.md`.
+
+**What this amendment changes.**
+
+The 5 stages defined in this ADR (ENTRY / SUGGEST / INPUT / CONFIRM / AFTERMATH) remain valid. ADR-013 adds 4 NEW pre-stages (UPLOAD / CLASSIFY / ROUTE / EXTRACT) which run BEFORE the original 5. Two of the original 5 stages have semantic shifts:
+
+| Stage | Original semantics (this ADR) | Amended semantics (ADR-013) |
+|---|---|---|
+| ENTRY | "I'm going to add a {fact}" | Same — UPLOAD outcome lands here |
+| SUGGEST | Values from prior context | Values from EXTRACT stage |
+| INPUT | Type values from scratch | Edit extracted values; manual entry fallback |
+| CONFIRM | Same | Same — now confirms extracted-or-edited values |
+| AFTERMATH | Same | Same |
+
+**What this amendment preserves.**
+
+- All 14 rules across the 5 stages remain in force when those stages execute.
+- Adaptability contract structure (independent vs linked stages) — extended with rows for the 4 new pre-stages, not replaced.
+- Stage collapse rules — extended to cover extraction-success vs extraction-failure, not replaced.
+- Rule 1.2 (RESUME — proposed-state on first INPUT) extends to apply at first UPLOAD touch as well; the `documents` row IS the proposed-state analogue at the upload stage.
+- Trust + safety stages (ENTRY, CONFIRM, AFTERMATH) remain always-required.
+- Convenience stages (SUGGEST, INPUT) can still collapse — and now collapse differently per extraction outcome.
+
+**What this amendment requires.**
+
+- Sprint A2: storage architecture for documents.
+- Sprint A3: extraction service spec + prompts.
+- Sprint A4: layered memory spec.
+- Sprint A5: Migration 0011 (4 new tables).
+- Sprint B1–B3: build the 4 new pre-stages.
+- Sprint D: Dashboard re-routing (bucket cards → upload zone).
+- ADR-013 supersedes none; both ADRs read together.
+
+**Manual entry path.**
+
+Sprint 7 (commit `e949ce1`) ships the manual entry form for the Employment Contract bucket. This amendment re-frames it as the FALLBACK path, accessed when:
+- Worker has no document.
+- Extraction fails (or returns confidence below the routing threshold).
+- Worker explicitly chooses to type values via the "I don't have my contract" escape hatch on the upload screen.
+
+The form code does not change. The Dashboard route changes in Sprint D.
+
+---
+
+## ADR-013 — Upload-first fact capture (Document Intelligence)
+
+- **Date:** 2026-04-29 (Sprint A1)
+- **Status:** Accepted (after pressure test — see Reasoning)
+
+**Context.** ADR-012 specified a stage-based "Add a Fact" UX pattern under the implicit assumption that workers type fact values from scratch (or accept type-equivalent prefills from prior context). Sprint 7 (commit `e949ce1`) shipped the first production implementation of that pattern for Layer 1 employment-contract capture; the smoke test surfaced an architectural mismatch with Apete's actual behaviour.
+
+Apete is a PALM-scheme poultry processing worker on a temporary visa, mobile-only, ESL, with low digital confidence and a borrowed phone (per `personas.md`). What he produces — and the only artefact a third-party advocate or FWO inspector can verify against — is *documents*: payslips, contracts, bank statements, super statements. Asking him to read those documents and re-type their values into a form duplicates work he already did, gates the comparison engine on his typing accuracy, and hides the document of record (the actual evidence) from PayChecker entirely. The form-first flow is Apete-hostile in proportion to the very anxieties (legalese, time, ESL, shared device) the personas file pins as load-bearing.
+
+The corrected mental model — captured in `docs/architecture/document-intelligence-plan-v01.md` (Sprint 7.1, commit `751be1e`) — is upload-first: Apete uploads the document; PayChecker classifies it, routes it to the right bucket, extracts the values, surfaces them for confirmation. Manual entry remains as an explicit fallback for the worker who has no document or for whom extraction fails. This ADR formalises that pivot, amends ADR-012 (above), and locks down the 4 new pre-stages, the 4-layer memory architecture, and the schema additions that Sprints A2–A5 build out.
+
+**Options.**
+- **(a) Pure upload-first; manual entry deprecated entirely.** Cleanest mental model — every fact comes from a document. Discarded — Apete may legitimately have no document for a fact (employer hasn't issued a payslip yet; verbal classification only; bank statement not yet received). Removing the manual fallback strands those workers and forces them to wait, which the comparison engine cannot tolerate per ADR-001 (refuses to run on unconfirmed inputs). The fallback exists for worker-safety reasons, not engineering laziness.
+- **(b) Upload-first primary + manual entry as accessible fallback.** Dashboard bucket cards route to the UPLOAD zone. Worker uploads → CLASSIFY → ROUTE → EXTRACT → ADR-012's ENTRY → SUGGEST (extracted values) → INPUT (edit extracted, or override) → CONFIRM → AFTERMATH. A visible "I don't have my {document}" tertiary on the upload screen routes to the Sprint 7 manual form. Extraction-failure inside the pipeline routes to the same manual form pre-filled with whatever low-confidence fields were extracted. **(Chosen.)**
+- **(c) Manual-entry-first + upload as enhancement (Sprint 7 status quo).** Discarded — Sprint 7 smoke test invalidated this. Form-first asks Apete to be the OCR, which is exactly the work the app is supposed to save him.
+- **(d) Hybrid per-bucket (upload-first for some buckets, manual for others).** Discarded — inconsistency confuses Apete (he learns one flow per bucket and can't generalise; advocate verifying his data sees five different patterns). The 5 buckets in `personas.md` design implications already share a common shape; hybrid breaks that.
+
+**Decision.** Option (b) — upload-first primary across all 5 buckets (Employment Contract / Payslips / Shifts / Super / Bank), with manual entry preserved as an explicit fallback. The flow gains 4 NEW pre-stages — UPLOAD / CLASSIFY / ROUTE / EXTRACT — that run before ADR-012's 5 stages. SUGGEST and INPUT take their amended semantics (extraction output + edit-in-place). The 4-layer memory architecture (generic / per-employer / per-worker / cross-document reconciliation) lives in 2 new tables (`employer_extraction_patterns`, `worker_extraction_preferences`); 2 more new tables (`document_classifications`, `document_extractions`) hold pipeline state per uploaded document. ADR-007's two gates extend to three: classify gate (worker confirms understood-doc) → extract gate (worker confirms extracted values) → compare gate (worker reviews comparison output).
+
+**Reasoning (pressure test summary).**
+
+`SKILL-PRJ-pressure-test.md` 5/5 cleared with stage-mapped mitigations.
+
+1. **Break the system — 5 ways the new flow fails Apete, mapped to stages.**
+
+| # | Failure | Stage | Mitigation |
+|---|---|---|---|
+| (i) | Slow data — UPLOAD takes 30 s on regional Wi-Fi; Apete bounces. | **UPLOAD** | Local-state progress feedback per file; resumable from `documents.RAW` state on next session (Rule 1.2 RESUME extension). Upload retries idempotent. No spinner-of-doubt without progress. |
+| (ii) | ESL — CLASSIFY confidence display reads as a judgment ("low confidence" → "I'm a bad uploader"). | **CLASSIFY** | Copy framing: "We're not sure what this is — can you tell us?" not "Low confidence: 0.42". No raw confidence numbers worker-facing. Confidence shown only as a routing decision (auto / review / manual). |
+| (iii) | Caregiver interruption mid-EXTRACT. Phone locks; Apete returns later. | **EXTRACT** | `document_extractions` row persists with `extraction_status = 'pending' / 'partial'`. ENTRY shows the same resume banner Sprint 7 already implements. Rule 1.2 extends. |
+| (iv) | Wrong classification — Apete uploaded a contract but classifier said "payslip". | **ROUTE** | Routing review screen lets Apete correct the bucket; correction writes to `document_classifications.routing_status = 'worker_corrected'` and feeds Layer 3 memory ("Apete's contracts come in this format"). No silent mis-routing — auto-route only above 0.85 confidence. |
+| (v) | Extraction failure — model returns garbage; no manual fallback reachable. | **EXTRACT → INPUT** | On `extraction_status = 'failed'` or `'low_confidence'`, the flow drops into ADR-012's INPUT stage with the manual form pre-filled by whatever was extracted. The "I don't have my {document}" escape hatch on UPLOAD is the second reach path. Apete is never trapped. |
+
+2. **Personas — Apete + advocate + Mia.**
+- **Apete (primary):** 90 % confidence the upload-first flow saves him typing the same numbers his employer already printed. Risk: he may not realise he can override an extracted value. Mitigation: Rule 2.2 (editable in place) carries forward; UPLOAD copy makes "We extracted these. Tap any to change." literal. Pass.
+- **Advocate (Apete's brother / FWO advocate):** verifies that Apete confirmed real values. Provenance per Rule 5.2 carries forward — extracted values land with `provenance = 'ocr_suggested'` (per `REF-FACT-model.md`); after CONFIRM they become `'ocr_suggested_confirmed'`. AFTERMATH labels show "from your payslip — you confirmed." Advocate can verify the calc against the original document. Pass.
+- **Mia (paid-tier hospitality, Phase 2):** uploads MA000009 hospitality payslips; extraction prompts (Sprint A3) use generic ATO payslip schema, so format coverage is broader than poultry-specific. Edge cases (broken-shift allowance, casual loading interaction with penalty rates per `calc-rules-v01.md`) live in calc engine, not extraction. Pass.
+
+3. **Apete misreadings — by stage.**
+
+| Stage | Misreading | Mitigation |
+|---|---|---|
+| **UPLOAD** | "Wrong file type" reads as "I'm doing it wrong." | Accept as wide a set as plausible (PNG/JPG/PDF/HEIC); reject with plain language *"This file looks like X — try uploading a payslip / contract / statement."* never *"Invalid file type."* Per Sprint 7 manual upload pattern in `src/lib/upload.ts`. |
+| **CLASSIFY** | Confidence display reads as judgment of Apete's competence. | No raw numbers worker-facing. Routing decisions framed as questions: *"Is this your payslip?"* — never as scoring. |
+| **ROUTE** | Routing review feels like an exam. | Single-tap correction; no required reading; "looks right to me" tertiary skips the review. |
+| **EXTRACT** | Low-confidence fields read as accusation ("we don't believe this number"). | Per Rule 2.1 + 5.2, label is *"please double-check this one"*, not *"low confidence."* Surface alongside the document image so Apete can verify against source. |
+
+4. **Privacy / safety / APP.**
+- **APP 1 (open + transparent).** New surfaces (classification, extraction, layered memory) documented in privacy policy v1 (Phase 0 finish-line; flagged below). In-app explainer at first UPLOAD: *"PayChecker reads your documents to save you typing. Your documents stay yours."* Pass with caveat — privacy policy v1 is an explicit ship-to-real-worker blocker per ADR-006.
+- **APP 3 (collection for disclosed purpose).** Each new piece of data is tied to a stated reason: classification = "to know which bucket"; extraction = "to save you typing"; layered memory = "so we get better at your documents over time." Pass.
+- **APP 5 (notification at collection).** Worker sees these reasons at UPLOAD, not buried. Pass.
+- **APP 6 (use only as disclosed).** Document content goes to Anthropic API for classification + extraction only; never used for analytics, model training, or secondary purpose. Layer 2/3 memory is per-employer / per-worker scoped — never cross-shared between workers. Layer 4 reconciliation runs in extraction prompt context only. Pass.
+- **APP 11 (security).** Document content travels: Supabase Storage → Anthropic API (TLS) → Supabase tables. Never on disk beyond worker session. RLS on all 4 new tables (signed-in worker can only see own rows; service role for the extraction service writes). Pass.
+- **R-004 (worker safety vs employer).** No employer-side surface added. No push notifications, no email summaries, no third-party visibility. Document content never leaves the Anthropic API + Supabase boundary. Pass.
+- **R-005 (info not advice).** Classification + extraction are info layers; they surface what was found, never what to do. Comparison output gating remains ADR-007's responsibility. Pass.
+- **R-006 (Privacy Act breach via support / debugging).** New tables expand the operator's PII surface (now includes document classification confidence, extraction patterns per employer). Mitigation: same RLS-no-service-role-debug discipline as existing tables; operator-facing read-redacted view is a Phase 1 dependency (already logged). Pass with caveat.
+- **NEW R-010 candidate:** Anthropic API as data processor — document content leaves Supabase boundary for the duration of each classification + extraction call. Anthropic's API terms (no training on customer data without opt-in; data retention bounded by API session) cover this; needs explicit privacy-policy disclosure. Logged for `risks.md` update in Sprint A3 (extraction service spec) — not in this ADR's scope to write the risk row, but flagged.
+
+5. **Reversibility + adaptability contract stress test.**
+- **Migration 0011 rollback:** four new tables `DROP TABLE` cleanly; existing `documents` table unaffected; Sprint 7 manual form continues to work because it never depended on extractions. Past comparisons immutable per ADR-005 (`inputs_snapshot` carries snapshotted facts).
+- **Worker correction:** wrong classification → worker corrects via ROUTE review; wrong extraction → edit at INPUT stage (Rule 2.2); wrong confirmation → existing edit-unsets-confirmation trigger (Migration 0010) works unchanged.
+- **Audit trail:** `document_classifications` carries `classified_at + classifier_version + routing_status`; `document_extractions` carries `extracted_at + extractor_version + extraction_status`. Layered memory tables carry `observation_count + last_observed`. No new audit tables required.
+- **One-way doors:** none. The 4 new stages are purely additive on top of ADR-012; they can be feature-flagged off and the form-first path of Sprint 7 still works as a degraded fallback.
+- **Adaptability contract:** the §13 table in `add-fact-pattern.md` extends with 4 new rows. UPLOAD is independent of all others (tunable in isolation). CLASSIFY is linked to ROUTE (correction path). ROUTE is linked to CLASSIFY (forward) + EXTRACT (downstream, since wrong route changes the extraction schema). EXTRACT is linked to ROUTE (upstream) + ADR-012's SUGGEST (extracted values feed it). Pattern revision (vs tuning) signaled by changes crossing more than 1 row of the extended §13 table.
+
+**5/5 cleared. No blockers. One residual: privacy policy v1 must update before any real-worker traffic hits the upload-first flow — this is an existing Phase 0 finish-line item per ADR-006, not a new blocker.**
+
+**Consequences.**
+- **Sprint 7 disposition.** Commit `e949ce1` ships unchanged. The route `/buckets/employment-contract` continues to host the manual form. Sprint D rewires the Dashboard "Employment contract" bucket card to route to the UPLOAD zone (path TBD, Sprint A2). The form becomes accessible via (i) a tertiary "I don't have my contract" link on the upload screen, and (ii) the existing route remaining valid for direct navigation.
+- **Migration 0011 schema (waits for Sprint A5).** Four new tables per `document-intelligence-plan-v01.md` §6: `document_classifications`, `document_extractions`, `employer_extraction_patterns`, `worker_extraction_preferences`. RLS mirrors `documents` (signed-in worker reads own; service role writes). Indexes on `(document_id)` + `(worker_id)` + `(employer_id, document_type)` per fetch path. Not applied this ADR.
+- **Sprints 8 / 9 / 10 paused.** The Layer 2 (shift logging) and Layer 3 (manual payslip entry) build sprints originally planned next now wait until Sprints A2–A5 (design) and B1–B3 (build the pre-stages) complete. Sprint 8/9/10 will compose the upload-first flow per bucket; their original specs remain valid for the manual fallback path inside each bucket.
+- **Sprint sequence (per `document-intelligence-plan-v01.md` §8).** A1 (this ADR) → A2 (storage) → A3 (extraction service + prompts) → A4 (layered memory) → A5 (Migration 0011) → B1–B3 (build pre-stages) → C+ (per-bucket extraction) → D (Dashboard retrofit) → E (comparison engine v1).
+- **Cost model.** ~$0.005 / classification (Haiku), ~$0.02–0.05 / extraction (Sonnet). At Phase 0 user count (tens), monthly cost negligible (~$0.20–0.50 / worker). Re-evaluate at Phase 1 with batching + Haiku-first heuristics.
+- **Privacy policy v1 update (Phase 0 finish-line).** Must disclose: document content sent to Anthropic API for classification + extraction; layered memory tables (per-employer + per-worker patterns); 7-year Privacy Act retention with deletion-on-request still binding. Already an existing Phase 0 blocker per ADR-006 — this ADR adds specifics to the disclosure list, not the blocker.
+- **Cross-references.** ADR-001 (confirmation sacred — extraction lands as `'ocr_suggested'` and only becomes calc-eligible after Rule 4.1 CONFIRM); ADR-003 (info not advice — classification + extraction are info layers; framing rules apply to all worker-facing copy); ADR-005 (indexing not looping — extraction reads only the document being processed, never the worker's document history); ADR-006 (orient don't collect — UPLOAD copy carries the orient; no field-collection until CONFIRM); ADR-007 (two gates → three gates: classify / extract / compare); ADR-009 / ADR-010 / ADR-011 (allowance reference data unaffected); ADR-012 (amended above; both ADRs read together).
+- **Reversibility.** Single ALTER + DROP TABLE per of the 4 Migration 0011 tables to roll back. Sprint 7's manual form continues to work without any of the new tables present. No one-way doors. Pattern revision (whole-pattern, not tuning) requires a new ADR per the adaptability contract; ADR-013 stays in history per ADRs-are-append-only.
+- **What this ADR explicitly does NOT cover.** Sprint A2 storage architecture (file naming, page-split, archival policy); Sprint A3 extraction service spec + prompt templates; Sprint A4 layered-memory write/read paths; Sprint A5 migration SQL; Sprint B1–B3 UX implementation; Sprint D Dashboard re-routing; Sprint E comparison engine. Each is its own sprint with its own audit + design pass; this ADR is the architectural commitment, not the implementation.

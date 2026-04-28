@@ -63,6 +63,28 @@
 | `product/personas.md` | Apete + household + paid-tier + advocate. The humans behind every default. |
 | `architecture/decisions.md` | ADR records — every architectural choice with context, options, decision, consequences. |
 | `architecture/risks.md` | R-NNN failure modes the system must defend against by design. |
+| `architecture/document-intelligence-plan-v01.md` | Future-state plan for upload-first fact capture; promoted to ADR-013. |
+| `architecture/add-fact-pattern.md` | "Add a Fact" UX operational spec (5 stages); amended by ADR-013 (4 pre-stages). |
+| `architecture/confirmation-flow.md` | Fact state machine + trigger-layer EDIT-vs-CONFIRM logic (Migration 0010). |
+| `architecture/calc-rules-v01.md` | FWC calc rules (Sprint 5.5) — Rule 1 records the v01 §4 casual-stacking correction. |
+
+### ADRs
+
+| # | Title | Status |
+|---|---|---|
+| ADR-001 | Confirmation model is sacred | Accepted |
+| ADR-002 | 3-layer fact model | Accepted |
+| ADR-003 | Information tool, not advice tool | Accepted |
+| ADR-004 | Clerk + Supabase third-party auth | Accepted |
+| ADR-005 | Indexing not looping | Accepted |
+| ADR-006 | Orient, don't collect | Accepted |
+| ADR-007 | Two gates before surfacing mismatches | Accepted |
+| ADR-008 | Single Supabase project per environment | Accepted |
+| ADR-009 | Allowance purpose handling on award reference data | Accepted |
+| ADR-010 | Allowance table shape | Accepted |
+| ADR-011 | Allowance unit enum extension | Accepted |
+| ADR-012 | "Add a Fact" UX pattern (stage-based) | Accepted (amended by ADR-013) |
+| ADR-013 | Upload-first fact capture (Document Intelligence) | Accepted |
 
 ## Tasks & scripts
 

@@ -4,6 +4,14 @@
 **Decision record:** `docs/architecture/decisions.md` — ADR-012.
 **Obeys:** ADR-001 (confirmation sacred), ADR-005 (indexing not looping), ADR-006 (orient don't collect), ADR-007 (two gates before mismatches), `SKILL-FACT-confirmation`, `confirmation-flow.md`, `personas.md` (Apete).
 
+## Status update — 2026-04-29
+
+This pattern is AMENDED by ADR-013 (upload-first fact capture). The 5 stages described below remain valid; ADR-013 adds 4 pre-stages (UPLOAD / CLASSIFY / ROUTE / EXTRACT) which run before this pattern's stages execute.
+
+For build sprints implementing fact capture, read ADR-013 first, then return to this document for the original 5-stage spec.
+
+The manual-entry path described in this document remains valid as the FALLBACK path (when worker has no document or extraction fails).
+
 This is **not** the JSX. It is the spec the JSX must satisfy. Build sprints (7/8/9) compose the 5 stages below; each layer picks which stages are visible and which collapse.
 
 ---
