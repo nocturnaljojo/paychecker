@@ -121,6 +121,14 @@ visual design (post-its, comments in JSX, leading paragraphs in HTML
 mocks), treat them as load-bearing constraints — they exist because
 someone foresaw a regression. Don't optimize them away in translation.
 
+### 2026-04-29 — sprint-7-smoke — Smoke tests catch architectural mismatch
+
+Sprint 7 shipped a manual fact-entry form for the Employment Contract bucket (commit `e949ce1`) — implementing ADR-012's 5-stage pattern faithfully. The smoke-test pause before declaring done caught the bigger problem: the form-first approach contradicted PayChecker's actual product philosophy. Workers upload documents; the app reads them; workers confirm. Manual entry is the *fallback*, not the primary action. Catching this at smoke test, not in production with Apete, prevented building Sprints 8 + 9 + 10 on top of a wrong assumption — the cost would have been three more wrong patterns to retrofit + Apete losing trust because forms made him do the work the app should do.
+
+The fix-cycle: Sprint 7.1 captured the upload-first plan as a doc; Sprint A1 promoted it to ADR-013 + amended ADR-012; Sprints A2/A3/A4 designed storage / extraction / memory; Sprint A5 wrote Migration 0011. By end of day the architecture was coherent across concept → schema → trigger → service → memory.
+
+Future-self: the smoke-test step is not a checkbox. It's the last gate before architectural decisions calcify in code. If the smoke test surfaces "this doesn't feel right" — even when build + lint + verifications pass — pause and re-audit the spec. The cost of pausing is one sprint; the cost of building three wrong sprints is a week.
+
 ### 2026-04-26 — s003 — `PERFORM` is PL/pgSQL-only; raw SQL needs `SELECT`
 
 The first attempt at the RLS smoke-test SQL used

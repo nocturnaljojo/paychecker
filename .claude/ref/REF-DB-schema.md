@@ -4,7 +4,9 @@
 Source of truth for the Supabase schema. Update this file in the same commit as any migration. Drift between this file and `supabase/migrations/` is a P1 audit finding.
 
 ## Status
-**Phase 0 schema — APPLIED.** Migrations `0001` (superseded), `0002_phase0_full_schema`, and `0003_payslips_storage_bucket` are live in `supabase/migrations/` and on the Supabase project. Migrations `0004`–`0010` extend the schema (onboarding columns, `award_allowances`, REVOKE hardening, MA000074 seed gaps + unit enum, proposed-state schema support, trigger CONFIRM/EDIT distinction). RLS smoke-tested 14/14 user-role tests + 2/2 trigger defense-in-depth tests pass (s003).
+**Phase 0 schema — APPLIED.** Migrations `0001` (superseded), `0002_phase0_full_schema`, and `0003_payslips_storage_bucket` are live in `supabase/migrations/` and on the Supabase project. Migrations `0004`–`0011` extend the schema (onboarding columns, `award_allowances`, REVOKE hardening, MA000074 seed gaps + unit enum, proposed-state schema support, trigger CONFIRM/EDIT distinction, **Document Intelligence schema per ADR-013**). RLS smoke-tested 14/14 user-role tests + 2/2 trigger defense-in-depth tests pass (s003).
+
+Migration 0011 (Sprint A5, 2026-04-29) implements ADR-013's upload-first document intelligence: pgvector extension (in `extensions` schema), 6 new columns on `documents` (incl. `embedding vector(1024)`), 4 new tables (`document_classifications`, `document_extractions`, `employer_extraction_patterns`, `worker_extraction_preferences`), `documents` storage bucket (alongside retained `payslips` alias), and `extraction_staging` deprecation (DROPped — fully subsumed by `document_extractions`).
 
 Migration history note: `0001_profiles_and_admin_helper` was applied direct-to-DB on 2026-04-25 (before this repo had `supabase/migrations/`). It built a Supabase-Auth-keyed `profiles` table that is incompatible with our Clerk-JWT auth model. `0002` drops every artifact `0001` created (table, helpers, triggers) and replaces them with the schema below. The `0001` SQL is committed verbatim purely for audit-trail visibility — never replay it on a fresh DB; replay starts at `0002`.
 
@@ -136,22 +138,81 @@ Time-bounded allowance reference data, parallel to `award_rates` per ADR-010. Th
 - CHECK `super_contribution_facts_confirmed_integrity` (0009): `confirmed_at IS NULL OR (received_at IS NOT NULL AND amount IS NOT NULL)`
 
 ### `documents`
-Uploaded source documents (payslips, contracts, etc.).
+Uploaded source documents (payslips, contracts, etc.). Extended by migration 0011 to support the upload-first document-intelligence pipeline (per ADR-013 + `docs/architecture/storage-architecture-v01.md` + `docs/architecture/layered-memory-v01.md`).
 - `id uuid pk`
 - `worker_id uuid fk workers`
-- `doc_type text check (doc_type in ('payslip', 'contract', 'super_statement', 'bank_export', 'other'))`
-- `storage_path text`
+- `doc_type text check (doc_type in ('payslip', 'contract', 'super_statement', 'bank_export', 'shift', 'other'))` (enum extended 0011 — added `'shift'` per ADR-013)
+- `storage_path text` (per `storage-architecture-v01.md`: `{worker_uuid}/{type}/{YYYY-MM-DD}_{employer_slug?}_{disambiguator}.{ext}`)
+- `original_filename text`, `mime_type text`, `size_bytes bigint`
 - `uploaded_at timestamptz`
 - `deleted_at timestamptz` (soft delete; hard delete after 30 days on user request)
+- `batch_id uuid` (added 0011 — groups documents uploaded in the same UI session; nullable)
+- `content_hash text` (added 0011 — SHA-256 hex of file content; UNIQUE INDEX on `(worker_id, content_hash) WHERE content_hash IS NOT NULL` for dedup)
+- `worker_facing_name text` (added 0011 — human-readable label populated by EXTRACT; worker-editable; nullable)
+- `state text NOT NULL DEFAULT 'raw'` (added 0011 — 10-state lifecycle per `storage-architecture-v01.md`: `raw / classifying / classified / routed / extracting / extracted / reviewed / confirmed / disputed / archived`; CHECK enforces enum)
+- `archived_at timestamptz` (added 0011 — supersede marker, separate from `deleted_at`; nullable)
+- `embedding vector(1024)` (added 0011 — Voyage `voyage-3-large` per `extraction-service-v01.md`; HNSW cosine index for Layer 4 reconciliation; nullable as kill-switch)
 
-### `extraction_staging`
+Indexes (0011): `documents_worker_content_hash_uniq`, `documents_batch_id_idx` (partial), `documents_state_idx`, `documents_embedding_idx` (HNSW cosine).
+
+### `document_classifications` (Migration 0011)
+Pipeline state per uploaded document for the CLASSIFY + ROUTE stages. Per `extraction-service-v01.md` "CLASSIFICATION OUTPUT" + plan §6.
 - `id uuid pk`
-- `document_id uuid fk documents`
-- `agent_version text`
-- `extracted_json jsonb`
-- `confidence_per_field jsonb`
-- `created_at`
-- (Worker confirms FROM here INTO the corresponding `*_facts` table — never directly.)
+- `document_id uuid fk documents (on delete restrict)`
+- `detected_type text` (the classifier's bucket pick)
+- `confidence numeric(3,2)` (operator-only — never worker-facing per ADR-013 mitigation)
+- `classified_at timestamptz`
+- `classifier_version text NOT NULL` (`"model@prompt-version"`, e.g. `"claude-haiku-4-5-20251001@classify-prompt-v01"`)
+- `routing_status text check (routing_status in ('auto_routed', 'review_pending', 'worker_corrected', 'failed'))`
+- `page_range int4range` (for mixed-content uploads; pages of `parent_doc_id`)
+- `parent_doc_id uuid fk documents` (when this row is a child classification of a multi-doc upload)
+- `notes text` (operator-readable, includes prompt-injection flags + Layer 4 dedup matches)
+- `created_at`, `updated_at`
+- RLS: SELECT for worker via `documents.worker_id` join; INSERT/UPDATE service-role only.
+
+### `document_extractions` (Migration 0011 — supersedes `extraction_staging`)
+Pipeline state per uploaded document for the EXTRACT stage. Per `extraction-service-v01.md` per-bucket output schemas + plan §6.
+- `id uuid pk`
+- `document_id uuid fk documents (on delete restrict)`
+- `bucket text NOT NULL check (bucket in ('employment_contract', 'payslip', 'shift', 'super_statement', 'bank_deposit'))`
+- `extracted_jsonb jsonb`
+- `field_confidences jsonb`
+- `extraction_status text NOT NULL check (extraction_status in ('pending', 'success', 'partial', 'failed', 'low_confidence'))`
+- `extracted_at timestamptz`
+- `extractor_version text NOT NULL` (`"model@prompt-version"`)
+- `created_at`, `updated_at`
+- RLS: SELECT for worker via `documents.worker_id` join; INSERT/UPDATE service-role only.
+
+### `employer_extraction_patterns` (Migration 0011 — Layer 2 memory)
+Per-employer extraction patterns per `docs/architecture/layered-memory-v01.md` Layer 2. Operator-only — workers never read.
+- `id uuid pk`
+- `employer_id uuid fk employers (on delete cascade)`
+- `document_type text NOT NULL`
+- `pattern_jsonb jsonb NOT NULL` (FORMAT-not-CONTENT — see layered-memory-v01.md §"Cross-worker leak via Layer 2" mitigation)
+- `observation_count int NOT NULL DEFAULT 1`
+- `last_observed timestamptz NOT NULL`
+- `confidence numeric(3,2)` (EMA per layered-memory-v01.md: `new = 0.7*old + 0.3*observation_score`)
+- `archived_at timestamptz` (12-month aging window; archive at confidence < 0.20)
+- `created_at`, `updated_at`
+- Index: `(employer_id, document_type, confidence DESC, observation_count DESC) WHERE archived_at IS NULL` for prompt-context fetch.
+- RLS: explicit `USING(false)` deny-all policy + `REVOKE ALL FROM PUBLIC + authenticated`. Operator-only intent enforced; service role bypasses RLS by design.
+
+### `worker_extraction_preferences` (Migration 0011 — Layer 3 memory)
+Per-worker extraction preferences per `docs/architecture/layered-memory-v01.md` Layer 3. Worker can read + DELETE own (deliberate departure from no-DELETE pattern; APP 12/13 privacy right).
+- `id uuid pk`
+- `worker_id uuid fk workers (on delete cascade)` (account-deletion cascade per layered-memory-v01.md)
+- `preference_key text NOT NULL`
+- `preference_value jsonb NOT NULL`
+- `observation_count int NOT NULL DEFAULT 1`
+- `last_observed timestamptz NOT NULL`
+- `confidence numeric(3,2)` (NULL until 3 observations; EMA shape mirrors Layer 2)
+- `archived_at timestamptz` (same aging shape as L2)
+- `created_at`, `updated_at`
+- Index: `(worker_id, last_observed DESC) WHERE archived_at IS NULL`.
+- RLS: SELECT for own + DELETE for own; INSERT/UPDATE service-role only.
+
+### `extraction_staging` — DEPRECATED (Migration 0011)
+DROPped in 0011. 0 rows at deprecation; functional shape fully subsumed by `document_extractions` (which adds `bucket`, `extraction_status`, `extracted_at`). Reversal SQL preserved in 0011's ROLLBACK block.
 
 ### `comparisons`
 Immutable snapshots.
@@ -177,15 +238,26 @@ A `STABLE` SQL helper `public.current_worker_id()` resolves the JWT sub to a `wo
 - `workers`: SELECT/INSERT/UPDATE allowed only where `clerk_user_id = auth.jwt() ->> 'sub'`. No DELETE.
 - `employers`, `awards`, `award_rates`: signed-in workers can SELECT shared reference data; only `employers` allows INSERT (for ad-hoc onboarding). Awards write via service role / migrations.
 - `documents`: SELECT/INSERT/UPDATE for `worker_id = current_worker_id()`. No DELETE — soft-delete via `deleted_at`.
-- `extraction_staging`: SELECT only for the document owner. INSERT only via service role (extraction agent).
+- `document_classifications` (0011): SELECT for worker via `documents.worker_id` join. INSERT/UPDATE service-role only. No DELETE.
+- `document_extractions` (0011): same shape as `document_classifications`.
+- `employer_extraction_patterns` (0011 — Layer 2): explicit deny-all `USING(false)` + `REVOKE ALL` from `PUBLIC` + `authenticated`. Operator-only.
+- `worker_extraction_preferences` (0011 — Layer 3): SELECT + DELETE for own (DELETE per APP 12/13 privacy right). INSERT/UPDATE service-role only.
 - `*_facts` (Layer 1, 2, 3): SELECT/INSERT/UPDATE for own rows. No DELETE.
 - `*_facts_history`: SELECT only for the fact owner. INSERTs come exclusively from BEFORE-UPDATE triggers (`SECURITY DEFINER`, bypass RLS). Triggers are the only write path.
 - `comparisons`: SELECT/INSERT only. UPDATE/DELETE rejected by trigger (so even service role can't mutate). RLS additionally blocks user-role UPDATE/DELETE silently (no policy → zero rows).
 
-Storage RLS (bucket `payslips`, see migration `0003`): `(storage.foldername(name))[1] = current_worker_id()::text` for SELECT/INSERT/UPDATE, scoped to `bucket_id = 'payslips'`. No DELETE.
+Storage RLS:
+- Bucket `payslips` (migration `0003`): `(storage.foldername(name))[1] = current_worker_id()::text` for SELECT/INSERT/UPDATE, scoped to `bucket_id = 'payslips'`. No DELETE. **Retained as alias** until Sprint B1 updates `src/lib/upload.ts`; later cleanup migration will remove.
+- Bucket `documents` (migration `0011`): same `(storage.foldername(name))[1] = current_worker_id()::text` pattern, scoped to `bucket_id = 'documents'`. SELECT/INSERT/UPDATE; no DELETE.
+
+## Extensions
+
+- `pgcrypto` (migration 0002, schema `extensions`).
+- `vector` (migration 0011, schema `extensions`) — pgvector for Layer 4 cosine-similarity search on `documents.embedding vector(1024)`.
 
 ## Triggers
 
+- On UPDATE to any of the 4 Migration-0011 tables (`document_classifications`, `document_extractions`, `employer_extraction_patterns`, `worker_extraction_preferences`): `set_updated_at` BEFORE-UPDATE trigger reuses `public.set_updated_at()` from migration 0001.
 - On UPDATE to any `*_facts` row (`*_audit_trail` BEFORE-UPDATE, rewritten in 0010 — see `docs/architecture/confirmation-flow.md` "Trigger-layer logic"):
   - If `OLD.confirmed_at IS NOT NULL` AND any data field changed → set `NEW.confirmed_at := NULL` (edit unsets confirmation).
   - If `OLD.confirmed_at IS NULL` (proposed-state) → trust `NEW.confirmed_at`. This is what makes the proposed → confirmed transition work even when the same UPDATE fills NULL fields and sets `confirmed_at = now()` (ADR-012 Rule 1.2 RESUME flow).

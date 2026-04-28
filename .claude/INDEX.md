@@ -67,6 +67,10 @@
 | `architecture/add-fact-pattern.md` | "Add a Fact" UX operational spec (5 stages); amended by ADR-013 (4 pre-stages). |
 | `architecture/confirmation-flow.md` | Fact state machine + trigger-layer EDIT-vs-CONFIRM logic (Migration 0010). |
 | `architecture/calc-rules-v01.md` | FWC calc rules (Sprint 5.5) — Rule 1 records the v01 §4 casual-stacking correction. |
+| `architecture/storage-architecture-v01.md` | Storage layout + filename convention + RLS pattern for the `documents` bucket (Sprint A2). |
+| `architecture/layered-memory-v01.md` | 4-layer memory read/write paths + privacy boundaries (Sprint A4). |
+| `architecture/extraction-service-v01.md` | Model selection (Haiku 4.5 + Sonnet 4.6 + Voyage-3-large 1024d) + output schemas + retry semantics (Sprint A3). |
+| `architecture/prompts/` | 6 prompt template skeletons (classify + 5 bucket extracts); Sprint B2 fills production copy. |
 
 ### ADRs
 
@@ -85,6 +89,22 @@
 | ADR-011 | Allowance unit enum extension | Accepted |
 | ADR-012 | "Add a Fact" UX pattern (stage-based) | Accepted (amended by ADR-013) |
 | ADR-013 | Upload-first fact capture (Document Intelligence) | Accepted |
+
+### Migrations
+
+| # | Title | Notes |
+|---|---|---|
+| 0001 | Profiles + admin helper | Superseded by 0002 (Supabase-Auth-keyed; incompatible with Clerk-JWT) |
+| 0002 | Phase 0 full schema | Identity + 3-layer facts + comparisons |
+| 0003 | Payslips storage bucket | Retained as alias post-0011 until Sprint B1 |
+| 0004 | Onboarding workers + consent | `country` + `preferred_language` cols |
+| 0005 | award_allowances + MA000074 seed | ADR-010 table shape |
+| 0006 | REVOKE history function execute | Sprint 2.5 |
+| 0007 | REVOKE FROM PUBLIC | Sprint 2.6 (correct REVOKE pattern) |
+| 0008 | Extend allowance unit enum | ADR-011 — `'km'` + `'event'` |
+| 0009 | Proposed-state schema support | NOT NULL relaxation + CHECK constraint |
+| 0010 | Distinguish CONFIRM from EDIT | Trigger logic for proposed→confirmed |
+| 0011 | Document Intelligence schema | ADR-013 — pgvector + 4 new tables + documents bucket |
 
 ## Tasks & scripts
 

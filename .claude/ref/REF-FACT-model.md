@@ -95,5 +95,20 @@ create table worker_classification_facts_history (...same shape...);
 - Putting derived values (e.g. weekly hours) into a Layer 2 table. Derived facts go in their own `derived_facts` table, computed lazily, never stored as if entered.
 - Allowing the calc to "fall back" to unconfirmed values "if no confirmed value exists". This is the single most dangerous pattern. Refuse to calc instead.
 
+## Document-driven facts (post-ADR-013)
+
+ADR-013 (Sprint A1, 2026-04-29) shifted fact capture from form-first to **upload-first**. The 3-layer fact model is unchanged; what's new is *how* facts arrive:
+
+- The worker uploads a document.
+- The extraction service (per `docs/architecture/extraction-service-v01.md`) classifies + routes + extracts structured fields.
+- Extracted fields land in `document_extractions` (Migration 0011) with `extraction_status` per bucket.
+- Worker reviews + confirms at the REVIEW stage (per ADR-012 amended). Confirmed values populate the corresponding `*_facts` row with `provenance = 'ocr_suggested_confirmed'` and `source_doc_id` pointing at the uploaded document.
+
+The provenance enum is unchanged. `'ocr_suggested'` rows in `document_extractions` are NOT calc-eligible until the worker confirms; on confirmation they flip to `'ocr_suggested_confirmed'` (calc-eligible per the calc-time selection rule above).
+
+Manual entry remains as a FALLBACK path (per ADR-013 + Sprint 7's `e949ce1` shipped form). When the worker has no document or extraction fails, the existing `'worker_entered'` provenance + manual capture surface continues to work.
+
+**Cross-references.** ADR-013 (decision); `docs/architecture/document-intelligence-plan-v01.md` (full architecture); `docs/architecture/storage-architecture-v01.md` (storage layout); `docs/architecture/layered-memory-v01.md` (4-layer memory feeding the extraction service); `docs/architecture/extraction-service-v01.md` (model + thresholds + output schemas); `docs/architecture/prompts/` (prompt skeletons per bucket).
+
 ## Why this exists
 The information-tool framing dies the moment a calc runs on facts the worker didn't see and confirm. The 3-layer model is what makes the framing operational rather than aspirational.

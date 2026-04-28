@@ -122,6 +122,36 @@
 - **Found:** 2026-04-27 by Jovi (s003h7 / Sprint 2.5)
 - **Closed:** 2026-04-27 by migration `0007_revoke_history_functions_from_public.sql` (Sprint 2.6). `REVOKE FROM PUBLIC` cleared all 10 advisor lints (rules 0028 + 0029); trigger semantics confirmed intact via in-DB smoke test (insert worker + employer + shift_fact, UPDATE the shift_fact, observe a row in `shift_facts_history` — 1 row written, rolled back).
 
+### POL-001 — Privacy policy v1: disclose Anthropic + Voyage as data processors
+- **Severity:** HIGH
+- **Source:** claude-review
+- **Status:** OPEN
+- **Found:** 2026-04-29 by Jovi (Sprint A3 + REF)
+- **What:** Privacy policy v1 (Phase 0 finish-line per ADR-006) must list **Anthropic** AND **Voyage AI** as data processors. Disclose what content travels to each (document content for both; embeddings stored in Supabase but NOT sent back), retention bounds (Anthropic: API session; Voyage: same shape per current ToS), and worker right to refuse upload + use the manual fallback path. R-010 + R-011 in `docs/architecture/risks.md` pin the boundaries.
+- **Why:** APP 1 + APP 3 + APP 5 + APP 6 + APP 8 obligations. Without this disclosure, the upload-first surface (ADR-013) ships without satisfying APP 1 ("open + transparent management") for cross-border disclosure to two new processors. Existing Phase 0 finish-line item per ADR-006; this entry adds the specifics.
+- **Effort:** M (legal-adjacent copy + plain-language explainers + worker-readable surface; ~half-day with legal-adjacent review).
+- **Dependencies:** None for drafting; legal review optional for Phase 0 (ASIC's "personal undertaking" model permits operator self-attestation if accurate).
+
+### POL-002 — Migration 0012 candidate: FK indexes + `(SELECT auth.jwt())` wrapping on early policies
+- **Severity:** LOW
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-29 by Jovi (Sprint A5)
+- **What:** Bundle two pre-existing tech-debt fixes into a single migration (0012 candidate). (1) Add covering indexes on the 9 FK columns flagged in ISS-002 (`*_facts.source_doc_id`, `*_facts.employer_id`, `worker_classification_facts.award_id`). (2) Re-write the 7 policies flagged in ISS-003 with `(SELECT auth.jwt())` wrapping pattern (workers / employers / awards / award_rates / award_allowances).
+- **Why:** Closes 16 advisor lints in one migration. Performance impact at Phase 0 is negligible; at Phase 1+ traffic, both become real. Phase 0 cost is small; deferring past Phase 1+ launch costs more.
+- **Effort:** S (~30 min — DDL drafting + verification + advisor re-run).
+- **Dependencies:** None. Can ship any time; ideally bundled with another migration to amortise the apply step.
+
+### POL-003 — Migration 0013 candidate: `payslips` bucket cleanup post-Sprint-B1
+- **Severity:** LOW
+- **Source:** audit
+- **Status:** OPEN
+- **Found:** 2026-04-29 by Jovi (Sprint A5)
+- **What:** After Sprint B1 ships the `src/lib/upload.ts` constant update (`'payslips'` → `'documents'`) and verifies no production traffic still references the `payslips` bucket, drop the alias. Migration 0013 candidate: drop the 3 storage policies on `payslips`, drop the `payslips` bucket from `storage.buckets`. Fast follow-up to ISS-001's resolution.
+- **Why:** Removes a misleadingly-named storage path; reduces operator confusion ("which bucket is the canonical one?"); aligns code, schema, and storage. Cheap once the dependency (Sprint B1) is satisfied.
+- **Effort:** S (~10 min — small migration + verification + advisor re-run).
+- **Dependencies:** ISS-001 closed (Sprint B1 ships upload.ts update).
+
 ### INFRA-007 — Install `poppler` / `pdftotext` for PDF extraction in research workflow
 - **Severity:** MED
 - **Source:** audit
