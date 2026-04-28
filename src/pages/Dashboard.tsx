@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { UserButton } from '@clerk/clerk-react'
 import {
   FileText,
@@ -143,11 +144,20 @@ function Toast({ children }: { children: ReactNode }) {
 }
 
 function Dashboard() {
+  const navigate = useNavigate()
   const [toast, setToast] = useState<string | null>(null)
 
   function comingSoon(label: string) {
     setToast(`${label} — Phase 0, not wired yet`)
     window.setTimeout(() => setToast(null), 2400)
+  }
+
+  function handleBucketTap(bucket: Bucket) {
+    if (bucket.key === 'contract') {
+      navigate('/buckets/employment-contract')
+      return
+    }
+    comingSoon(bucket.primary)
   }
 
   return (
@@ -180,7 +190,7 @@ function Dashboard() {
             <BucketCard
               key={bucket.key}
               bucket={bucket}
-              onPrimaryClick={() => comingSoon(bucket.primary)}
+              onPrimaryClick={() => handleBucketTap(bucket)}
             />
           ))}
         </div>
