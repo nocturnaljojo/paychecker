@@ -71,7 +71,7 @@ Time-bounded allowance reference data, parallel to `award_rates` per ADR-010. Th
 - `code text not null` (e.g. `LEADING_HAND_1_19`, `COLD_WORK_BAND_LOW`)
 - `description text not null` (worker-facing label)
 - `amount numeric(10,2) not null`
-- `unit text not null check (unit in ('hour', 'week', 'shift'))`
+- `unit text not null check (unit in ('hour', 'week', 'shift', 'km', 'event'))` (extended 2026-04-28 per ADR-011 / migration 0008 to support per-km vehicle allowance and event-triggered allowances. Trigger conditions for `'event'`-unit allowances live in calc-engine code keyed off the `code` column, not in schema — see `docs/architecture/calc-rules-v01.md` Rule 7)
 - `purpose text not null default 'additive' check (purpose in ('all_purpose', 'additive', 'penalty_modifier', 'one_off'))`
 - `fwc_clause text not null` (e.g. `17.2(b)(i)`)
 - `effective_from date not null`, `effective_to date` (nullable)
