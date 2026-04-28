@@ -4,7 +4,7 @@
 Source of truth for the Supabase schema. Update this file in the same commit as any migration. Drift between this file and `supabase/migrations/` is a P1 audit finding.
 
 ## Status
-**Phase 0 schema — APPLIED.** Migrations `0001` (superseded), `0002_phase0_full_schema`, and `0003_payslips_storage_bucket` are live in `supabase/migrations/` and on the Supabase project. RLS smoke-tested 14/14 user-role tests + 2/2 trigger defense-in-depth tests pass (s003).
+**Phase 0 schema — APPLIED.** Migrations `0001` (superseded), `0002_phase0_full_schema`, and `0003_payslips_storage_bucket` are live in `supabase/migrations/` and on the Supabase project. Migrations `0004`–`0010` extend the schema (onboarding columns, `award_allowances`, REVOKE hardening, MA000074 seed gaps + unit enum, proposed-state schema support, trigger CONFIRM/EDIT distinction). RLS smoke-tested 14/14 user-role tests + 2/2 trigger defense-in-depth tests pass (s003).
 
 Migration history note: `0001_profiles_and_admin_helper` was applied direct-to-DB on 2026-04-25 (before this repo had `supabase/migrations/`). It built a Supabase-Auth-keyed `profiles` table that is incompatible with our Clerk-JWT auth model. `0002` drops every artifact `0001` created (table, helpers, triggers) and replaces them with the schema below. The `0001` SQL is committed verbatim purely for audit-trail visibility — never replay it on a fresh DB; replay starts at `0002`.
 
@@ -82,53 +82,58 @@ Time-bounded allowance reference data, parallel to `award_rates` per ADR-010. Th
 
 ### `worker_classification_facts` (Layer 1)
 - `id uuid pk`
-- `worker_id uuid fk workers`
-- `employer_id uuid fk employers`
-- `classification_code text`
-- `award_id uuid fk awards`
-- `effective_from date`, `effective_to date`
-- `provenance text` (enum: see `REF-FACT-model.md`)
-- `confirmed_at timestamptz`
+- `worker_id uuid fk workers` (NOT NULL)
+- `employer_id uuid fk employers` (NOT NULL)
+- `classification_code text` (nullable since 0009 — proposed-state)
+- `award_id uuid fk awards` (nullable since 0009 — proposed-state)
+- `effective_from date` (nullable since 0009), `effective_to date`
+- `provenance text` (NOT NULL — enum: see `REF-FACT-model.md`)
+- `confirmed_at timestamptz` (nullable; NULL = proposed-state, NOT NULL = confirmed)
 - `source_doc_id uuid fk documents` (nullable)
 - `created_at`, `updated_at`
+- CHECK `worker_classification_facts_confirmed_integrity` (0009): `confirmed_at IS NULL OR (award_id IS NOT NULL AND classification_code IS NOT NULL AND effective_from IS NOT NULL)`
 
-`worker_classification_facts_history` — same shape + `change_type text` and `changed_at timestamptz`.
+`worker_classification_facts_history` — same shape + `change_type text` and `changed_at timestamptz`. Same NOT NULL relaxations as parent (0009) so the BEFORE-UPDATE trigger can copy proposed-state rows. No CHECK on history (insert-only audit trail).
 
 ### `shift_facts` (Layer 2)
 - `id uuid pk`
-- `worker_id uuid fk workers`
-- `employer_id uuid fk employers`
-- `started_at timestamptz`, `ended_at timestamptz`
-- `break_minutes int default 0`
-- `shift_type text check (shift_type in ('ordinary', 'overtime', 'public_holiday', 'weekend_penalty'))`
+- `worker_id uuid fk workers` (NOT NULL)
+- `employer_id uuid fk employers` (NOT NULL)
+- `started_at timestamptz` (nullable since 0009), `ended_at timestamptz` (nullable since 0009)
+- `break_minutes int default 0` (NOT NULL — default fills proposed-state)
+- `shift_type text check (shift_type in ('ordinary', 'overtime', 'public_holiday', 'weekend_penalty'))` (nullable since 0009)
 - `notes text`
-- `provenance text`, `confirmed_at timestamptz`, `source_doc_id uuid fk documents`
+- `provenance text` (NOT NULL), `confirmed_at timestamptz` (nullable), `source_doc_id uuid fk documents` (nullable)
 - `created_at`, `updated_at`
+- CHECK `shift_facts_confirmed_integrity` (0009): `confirmed_at IS NULL OR (started_at IS NOT NULL AND ended_at IS NOT NULL AND shift_type IS NOT NULL)`
 
-`shift_facts_history` — same + change tracking.
+`shift_facts_history` — same + change tracking. Same 0009 NOT NULL relaxations as parent. No CHECK.
 
 ### `payslip_facts` (Layer 3)
 - `id uuid pk`
-- `worker_id uuid fk workers`
-- `employer_id uuid fk employers`
-- `period_start date`, `period_end date`
-- `gross_pay numeric(10,2)`, `net_pay numeric(10,2)`
+- `worker_id uuid fk workers` (NOT NULL)
+- `employer_id uuid fk employers` (NOT NULL)
+- `period_start date` (nullable since 0009), `period_end date` (nullable since 0009)
+- `gross_pay numeric(10,2)` (nullable since 0009), `net_pay numeric(10,2)` (nullable since 0009)
 - `ordinary_hours numeric(8,2)`, `ordinary_rate numeric(10,4)`
 - `ot_hours numeric(8,2)`, `ot_rate numeric(10,4)`
 - `allowances jsonb`, `deductions jsonb`
 - `tax numeric(10,2)`, `super_amount numeric(10,2)`, `super_destination text`
-- `provenance text`, `confirmed_at timestamptz`, `source_doc_id uuid fk documents`
+- `provenance text` (NOT NULL), `confirmed_at timestamptz` (nullable), `source_doc_id uuid fk documents` (nullable)
 - `created_at`, `updated_at`
+- CHECK `payslip_facts_confirmed_integrity` (0009): `confirmed_at IS NULL OR (period_start IS NOT NULL AND period_end IS NOT NULL AND gross_pay IS NOT NULL AND net_pay IS NOT NULL)`
 
-`payslip_facts_history` — same + change tracking.
+`payslip_facts_history` — same + change tracking. Same 0009 NOT NULL relaxations as parent. No CHECK.
 
 ### `bank_deposit_facts` (Layer 3)
-- `id`, `worker_id`, `deposited_at date`, `amount numeric(10,2)`, `narration text`
-- standard fact columns
+- `id`, `worker_id` (NOT NULL), `deposited_at date` (nullable since 0009), `amount numeric(10,2)` (nullable since 0009), `narration text`
+- standard fact columns; `provenance` NOT NULL; `confirmed_at`, `source_doc_id` nullable
+- CHECK `bank_deposit_facts_confirmed_integrity` (0009): `confirmed_at IS NULL OR (deposited_at IS NOT NULL AND amount IS NOT NULL)`
 
 ### `super_contribution_facts` (Layer 3)
-- `id`, `worker_id`, `received_at date`, `amount numeric(10,2)`, `source_employer text`
-- standard fact columns
+- `id`, `worker_id` (NOT NULL), `received_at date` (nullable since 0009), `amount numeric(10,2)` (nullable since 0009), `source_employer text`
+- standard fact columns; `provenance` NOT NULL; `confirmed_at`, `source_doc_id` nullable
+- CHECK `super_contribution_facts_confirmed_integrity` (0009): `confirmed_at IS NULL OR (received_at IS NOT NULL AND amount IS NOT NULL)`
 
 ### `documents`
 Uploaded source documents (payslips, contracts, etc.).
@@ -181,7 +186,11 @@ Storage RLS (bucket `payslips`, see migration `0003`): `(storage.foldername(name
 
 ## Triggers
 
-- On UPDATE to any `*_facts` row: insert old row into `*_history`, set `confirmed_at = null`, set `updated_at = now()`.
+- On UPDATE to any `*_facts` row (`*_audit_trail` BEFORE-UPDATE, rewritten in 0010 — see `docs/architecture/confirmation-flow.md` "Trigger-layer logic"):
+  - If `OLD.confirmed_at IS NOT NULL` AND any data field changed → set `NEW.confirmed_at := NULL` (edit unsets confirmation).
+  - If `OLD.confirmed_at IS NULL` (proposed-state) → trust `NEW.confirmed_at`. This is what makes the proposed → confirmed transition work even when the same UPDATE fills NULL fields and sets `confirmed_at = now()` (ADR-012 Rule 1.2 RESUME flow).
+  - Log to `*_history` whenever a data field OR `confirmed_at` changed; no-op UPDATEs are not logged.
+  - Always set `NEW.updated_at := now()`.
 - On INSERT to `comparisons`: validate that all `inputs_snapshot` fact ids have `confirmed_at IS NOT NULL`. Fail the insert if not.
 
 ## Why this exists

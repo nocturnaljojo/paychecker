@@ -43,6 +43,17 @@ Every pre-filled value shows its source: a small label like "from your payslip" 
 ### Edit unsets confirmation
 If a confirmed value is edited, the row goes back to "proposed" until re-confirmed. UI surfaces this: "Changes saved — please confirm to include in your next comparison."
 
+### Trigger-layer logic: EDIT vs CONFIRM (migration 0010)
+The five `*_audit_trail` BEFORE-UPDATE triggers (`log_wcf_history` / `log_sf_history` / `log_psf_history` / `log_bdf_history` / `log_scf_history`) distinguish three cases by looking at `OLD.confirmed_at`:
+
+1. **CONFIRM (or fill-and-confirm in one step)** — `OLD.confirmed_at IS NULL`. The row is in proposed state. The trigger trusts whatever `NEW.confirmed_at` is and does NOT nullify it. This is what allows the worker's "Confirm" tap to land — even when it carries field-fills for previously-NULL fields (per ADR-012 Rule 1.2 RESUME flow).
+2. **EDIT after confirmation** — `OLD.confirmed_at IS NOT NULL` AND a data field changed. Trigger sets `NEW.confirmed_at := NULL` ("edit unsets confirmation" rule). Worker must re-confirm.
+3. **No-op UPDATE** — nothing material changed. No history row written; `confirmed_at` untouched. `updated_at` still bumps.
+
+History rows are written when any data field OR `confirmed_at` changed. The `*_facts_confirmed_integrity` CHECK constraint (migration 0009) enforces that `confirmed_at IS NOT NULL` requires all calc-required fields to be NOT NULL, regardless of how the row got there.
+
+Without this distinction the proposed→confirmed transition is impossible — every UPDATE would nullify the confirmation that the same UPDATE was trying to set. See migrations 0009 (NOT NULL relaxation + CHECK) and 0010 (trigger logic).
+
 ## Why "imported_unverified" exists but isn't calc-eligible
 We may need to bulk-import historical data (e.g. worker has 6 months of payslips and we set up an import flow). Those rows go into `*_facts` with `imported_unverified` and `confirmed_at = null` so the worker can review them in batches. Calc never includes them.
 
