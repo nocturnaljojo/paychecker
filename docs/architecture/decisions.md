@@ -260,3 +260,57 @@ The pressure test (`SKILL-PRJ-pressure-test.md`) ran on Option Z. All five promp
 - **Reversibility.** `DROP TABLE award_allowances`; one statement; no data loss elsewhere; calc engine reverts to "rate only" (legacy state). Z → Y migration tractable as a single SELECT-INSERT pass if needed.
 - **Sprint 2 dependency.** This ADR unblocks Sprint 2. Sprint 2 will (i) write migration `0005_award_allowances.sql` per the shape above, (ii) seed `awards` + `award_rates` for MA000074 from `awards-ma000074-v01.md` §2, (iii) seed `award_allowances` for the four sourced MA000074 allowances (Leading Hand 1–19 / Leading Hand 20+ / First Aid; Cold Work bookend rows pending the temperature-band table — flag the gap rather than guess), (iv) update `REF-DB-schema.md` with the new table, (v) extend `REF-AWARDS-list.md` with `Last reviewed: 2026-04-27` and a `Partial` support level (full once `[SOURCE NEEDED]` flags from `awards-ma000074-v01.md` §6 are closed in v02).
 - **Documentation update.** `REF-DB-schema.md` gets a new `award_allowances` section parallel to `award_rates`. `REF-AWARDS-list.md` gains a "supports allowances" column. `SKILL-AWARD-add-new` step 3 gets a sub-step note that allowances and classifications seed together, not separately.
+
+---
+
+## ADR-011 — Allowance unit enum extension
+
+- **Date:** 2026-04-28 (Sprint 5.5)
+- **Status:** Accepted (after pressure test — see Reasoning)
+
+**Context.** ADR-010 created `award_allowances` with `unit text NOT NULL CHECK (unit IN ('hour','week','shift'))`. Sprint 5 verbatim research closed the v01 §6 gaps (`docs/research/awards-ma000074-v02.md`) and surfaced two MA000074 allowances the current enum cannot represent: **vehicle allowance** ($0.98 per **kilometre**, cl 17.3(b)) and **meal allowance** ($18.38 per **meal**, payable as an event when an employee works ≥1.5 hr OT after ordinary hours and no meal is provided, cl 17.3(a)). Both must be seedable before the calc engine can compute Apete's expected gross when he drives his own car between sheds or works late enough to claim an OT meal. Awards `MA000059` (Phase 3), `MA000009` (Phase 2), and `MA000028` (Phase 4) are likely to surface additional unit shapes (call-out, broken-shift, accommodation), so this ADR also has to anticipate the next 1–2 awards without committing to every conceivable case.
+
+**Options.**
+- **(A) Extend the enum: add `'km'` and `'event'`.** `unit IN ('hour','week','shift','km','event')`. `'km'` is concrete (vehicle allowance, multiple awards). `'event'` is the umbrella for trigger-shaped allowances (meal, future broken-shift, call-out). The trigger condition (e.g. "OT ≥ 1.5 hr after ordinary, employer didn't provide meal") lives in calc-engine logic + a per-shift Layer 2 fact the worker confirms. Migration: one ALTER constraint; backwards compatible (existing rows already have valid `unit` values). **(Chosen.)**
+- **(B) Replace enum with two columns: `unit` (dimension) + `condition` (trigger).** Separates measurement dimension from accrual rule. The `condition` ends up enum-shaped anyway (per-hour / per-km / per-event / per-shift / once-weekly / etc.) — same problem renamed. Discarded — adds surface area without removing the underlying decision.
+- **(C) Keep current enum bounded; add `compute_basis jsonb` for special cases.** `unit` stays `('hour','week','shift')`; `compute_basis` carries `{"type":"per_km"}`, `{"type":"per_overtime_event","threshold_hours":1.5}`, etc. Discarded — `jsonb` is opaque to `CHECK` constraints, the calc engine has to validate every case at runtime, and the bounded enum's "type safety" is lost the moment you have to read `compute_basis` to know what `unit` actually means.
+- **(D) Per-allowance polymorphism: separate tables (`award_allowances_hourly`, `award_allowances_per_km`, etc.).** Maximally type-safe; massively over-engineered for ~5–7 distinct allowance shapes across 4 Phase-N awards. Discarded.
+
+**Decision.** Option A — extend the `unit` enum with `'km'` and `'event'`. Migration shape (Sprint 2.1 candidate):
+
+```sql
+ALTER TABLE public.award_allowances
+    DROP CONSTRAINT award_allowances_unit_check;  -- Postgres-generated name; actual is the inline CHECK
+
+ALTER TABLE public.award_allowances
+    ADD CONSTRAINT award_allowances_unit_check
+    CHECK (unit IN ('hour', 'week', 'shift', 'km', 'event'));
+```
+
+(In practice Postgres names the inline CHECK constraint `award_allowances_unit_check` or similar; Sprint 2.1 will look it up and DROP by exact name before re-adding.) Trigger conditions for `'event'`-unit allowances are encoded in the calc-engine code path keyed off the `code` column (`MEAL_OVERTIME` knows to trigger on Layer 2 fact "worked ≥1.5 hr OT, employer didn't provide meal"), not in a parallel taxonomy. Trigger rules are documented in `docs/architecture/calc-rules-v01.md` (also created this sprint).
+
+**Reasoning (pressure test summary).**
+
+The pressure test (`SKILL-PRJ-pressure-test.md`) ran on Option A. All five prompts cleared with mitigations.
+
+1. **Break this system (5 ways).** (i) A future award introduces a sixth unit (`'piece'`, `'tonne'`, `'load'`) — mitigated by extending the enum via a new ADR; intentional friction prevents drift. (ii) Calc engine sees an unknown `unit` value at runtime — engine MUST `RAISE` (loud-by-design, mirrors ADR-009 unknown-purpose rule); silent fallback is a worker-safety failure. (iii) `'event'`-unit allowance fires without the corresponding Layer 2 trigger fact — calc engine refuses to add the allowance line; surfaces "this allowance applies but the trigger fact is missing — confirm the trigger to include in next comparison" UI prompt (mirrors ADR-001 "refuse to calc" pattern). (iv) `'km'`-unit allowance is paid but worker hasn't logged the km — same defensive default; allowance not paid until km Layer 2 fact is confirmed. (v) Trigger condition for `'event'`-unit allowances is hardcoded per-`code` in the calc engine, which couples calc engine to award text; if cl 17.3(a) changes to ≥2 hr OT threshold via FWC variation, calc engine code must change too — mitigated by `SKILL-AWARD-add-new` step 3 sub-rule (variation = re-research = code review of all `event`-unit triggers in scope).
+
+2. **Personas (Apete / advocate / paid-tier Mia).** Apete doesn't see the enum; he sees the report. Vehicle allowance line should render as "Vehicle allowance — $0.98 × 47.3 km = $46.34 (cl 17.3(b))" so the math is visible and verifiable. Advocate same; the per-km math is auditable line-by-line. Mia (Phase 2 hospitality) is likely to hit `'event'`-unit allowances first (broken shift in MA000009) — schema accommodates her without code change.
+
+3. **What Apete would misunderstand.** "Per kilometre" and "per event" are user-friendly already; no jargon translation needed. The risk is Apete forgetting to LOG the km or the OT-meal event, in which case the allowance silently doesn't fire. Two wording fixes: (a) bucket-detail UI for "Vehicle allowance" (Phase 1+) explicitly lists "you logged X km this period" before computing; if X = 0, the UI says "no km logged for this period — add a km entry to claim this allowance" rather than failing silently. (b) Same pattern for meal-allowance trigger.
+
+4. **Privacy / safety.** APP 1, 3, 5, 6, 11: pass — schema change is invisible; no new collection. R-004 worker-safety: pass — Option A bounds the enum, which is auditable; advocates can verify every allowance's unit at a glance.
+
+5. **Reversibility.** ALTER constraint to roll back is one statement; if any rows use `'km'` or `'event'` they'd need conversion or removal first, but that's a routine data-migration question. Past comparisons unaffected per ADR-005 (`inputs_snapshot` carries the unit at comparison time). No one-way doors.
+
+**Consequences.**
+- **Migration shape (Sprint 2.1).** Single `ALTER TABLE … DROP CONSTRAINT … ADD CONSTRAINT …` block. Same migration block can also INSERT the previously-deferred allowance rows: Cold Work middle band ($1.67/hr, `unit='hour'`); Meal allowance ($18.38, `unit='event'`, code `MEAL_OVERTIME`); Vehicle allowance ($0.98, `unit='km'`, code `VEHICLE_KM`).
+- **Calc engine impact.** `fetchReferenceData(awardId, classificationCode, asOfDate)` returns rows with the new units transparently. The per-period computation branches on `unit`:
+  - `hour` / `week` / `shift`: as before — multiply amount by the unit count for the period.
+  - `km`: read the worker's logged km from `shift_facts` (or a future `transit_facts` Layer 2 row; out of Phase 0 scope), multiply.
+  - `event`: read the relevant Layer 2 fact (e.g. "OT ≥ 1.5 hr after ordinary, no meal provided"); if confirmed, add the flat amount once per occurrence; if not confirmed, allowance is invisible to the calc per ADR-001.
+  - Engine MUST `RAISE` on unknown unit; silent fallback to `additive` is forbidden.
+- **Future-proofing.** MA000059 (Meat Industry, Phase 3) likely uses the same five units. MA000009 (Hospitality, Phase 2) introduces broken-shift allowance — `unit='event'`, trigger condition encoded per-code. MA000028 (Horticulture, Phase 4) piece rates are *rates* (encoded in `award_rates.pay_basis = 'piece'`, already supported by migration 0002), not allowances — out of this ADR's scope.
+- **Reversibility.** Single-statement DROP/ADD CONSTRAINT to roll back. Past comparisons immutable per ADR-005.
+- **Sprint 2.1 dependency.** This ADR unblocks Sprint 2.1 — the small follow-up migration that closes the seed gaps Sprint 2 left open. Sprint 2.1 spec lives in `docs/research/awards-ma000074-v02.md` §17.2(c) + §17.3 callouts.
+- **Calc-rules documentation.** The trigger conditions for `'event'`-unit allowances are codified in `docs/architecture/calc-rules-v01.md` (Sprint 5.5 Part 2). That document is the source of truth for the calc engine's allowance-handling switch statement; this ADR governs the schema; ADR-009 governs the purpose flag; ADR-010 governs the table shape. Together they pin the allowance pipeline end-to-end.
