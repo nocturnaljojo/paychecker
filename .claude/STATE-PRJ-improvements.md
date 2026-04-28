@@ -125,8 +125,9 @@
 ### INFRA-007 — Install `poppler` / `pdftotext` for PDF extraction in research workflow
 - **Severity:** MED
 - **Source:** audit
-- **Status:** OPEN
+- **Status:** CLOSED
 - **Found:** 2026-04-27 by Jovi (s003h8 / Sprint 3)
+- **Closed:** 2026-04-28 (Sprint 4). `pdftotext` (xpdf-derived, version 4.00) was already on `PATH` in the local Git Bash environment — no install needed. The Sprint 3 wall was an extractor-pipeline mismatch (`WebFetch` content extractor read the FWC PDF as font metadata only), not an actual missing-tooling problem. `WebFetch` + `pdftotext -layout` is now the canonical research path for FWC PDFs: `WebFetch` saves the PDF to a local cache, then `pdftotext -layout <pdf> <txt>` extracts the embedded text layer with structure preserved. Closed via Sprint 4: MA000074 Schedule A.1.1 / A.1.2 / A.1.3 captured verbatim into `docs/research/awards-ma000074-v02.md`. Future award PDFs (MA000059, MA000009, MA000028) unblocked via the same pattern.
 - **What:** Sprint 3 hit a hard wall trying to extract Schedule A definitions for MA000074. The FWC publishes consolidated awards as long single-page HTML that the `WebFetch` extractor truncates before reaching the Schedules; the FWC exposure-draft PDFs are image-encoded with no embedded text layer; the environment lacks `pdftoppm` / `pdftotext` (`Read` tool errors with "pdftoppm not found"). Every web-accessible path failed identically — see `docs/research/awards-ma000074-v02.md` §X for the full sourcing log.
 - **Why:** Every future award research pass (`MA000059` Meat Industry — Phase 3; `MA000009` Hospitality — Phase 2; `MA000028` Horticulture — Phase 4) will hit this same wall when their Schedules need verbatim extraction. One-time tooling install unblocks all of them. Without it, every award costs an extra ~15 min of manual browser-download + paste per Schedule.
 - **Effort:** S (~5 min one-time install: `poppler` package via the local platform's package manager, expose `pdftoppm` and `pdftotext` on `PATH`).
