@@ -314,3 +314,46 @@ The pressure test (`SKILL-PRJ-pressure-test.md`) ran on Option A. All five promp
 - **Reversibility.** Single-statement DROP/ADD CONSTRAINT to roll back. Past comparisons immutable per ADR-005.
 - **Sprint 2.1 dependency.** This ADR unblocks Sprint 2.1 — the small follow-up migration that closes the seed gaps Sprint 2 left open. Sprint 2.1 spec lives in `docs/research/awards-ma000074-v02.md` §17.2(c) + §17.3 callouts.
 - **Calc-rules documentation.** The trigger conditions for `'event'`-unit allowances are codified in `docs/architecture/calc-rules-v01.md` (Sprint 5.5 Part 2). That document is the source of truth for the calc engine's allowance-handling switch statement; this ADR governs the schema; ADR-009 governs the purpose flag; ADR-010 governs the table shape. Together they pin the allowance pipeline end-to-end.
+
+---
+
+## ADR-012 — "Add a Fact" UX pattern (stage-based)
+
+- **Date:** 2026-04-28 (Sprint 6)
+- **Status:** Accepted (after pressure test — see Reasoning)
+
+**Context.** Sprints 7 / 8 / 9 each build a fact-capture surface — Layer 1 (employer / classification / pay terms inside the "Employment contract" bucket detail flow), Layer 2 (shift logging), Layer 3 (manual payslip entry). Without a shared UX pattern, the three screens drift, Apete sees three inconsistent "Add a Fact" experiences across one phone session, and a refactor pass becomes inevitable. Sprint 6 designs the pattern once so the three build sprints become mechanical applications. The pattern must serve Apete (PALM worker, ESL, low digital confidence, mobile-only, anxious, will not complete a 20-minute wizard in one sitting per `docs/product/personas.md`) and must be tuneable when Apete reports "I got stuck here" without compounding fixes across the whole flow.
+
+**Options.**
+- **(a) Step-by-step wizard per fact** — full-screen-per-stage. Most explicit; highest screen-count cost; treats every fact as if it were onboarding-shaped. Discarded — Layer 2 "log a shift" + accept-all-suggestions case becomes 5 screens for one tap; that violates ADR-006's friction discipline.
+- **(b) Single form with inline confirmation** — one screen, all fields, all stages collapsed. Cheap to ship; fails the moment SUGGEST/INPUT diverge (which they do for Layer 3 payslip's 7+ fields with mixed prefill provenance) and fails the resume-mid-flow case (no stage boundary = no obvious resume point). Discarded.
+- **(c) Stage-based composition — 5 named stages (ENTRY / SUGGEST / INPUT / CONFIRM / AFTERMATH), each with 1–3 rules, with explicit collapse rules and an adaptability contract.** Apete sees a consistent stage rhythm across Layers 1/2/3 even when stages collapse differently per layer. Tuning sprints know which stages they can change without re-testing the rest. **(Chosen.)**
+
+**Decision.** Option C — stage-based composition. The 5 stages are:
+
+1. **ENTRY** — what Apete sees *before* the form. Resume-safe.
+2. **SUGGEST** — values offered with provenance labels (collapses cleanly when no defensible default exists).
+3. **INPUT** — vertical 52 px-tall fields, plain-language hints, no auto-advance.
+4. **CONFIRM** — the literal word "Confirm" (per `SKILL-FACT-confirmation`), pre-CONFIRM summary visible, button disabled with named hint until valid.
+5. **AFTERMATH** — screen does NOT navigate away on success; saved values + provenance + tertiary edit/discard remain on the same screen.
+
+Operational spec lives in `docs/architecture/add-fact-pattern.md` (1–16 sections covering: rules per stage, three Apete walkthroughs across Layers 1/2/3, stage collapse table, edge cases, copy guidelines, adaptability contract, pseudo-JSX verification, pressure test summary).
+
+**Reasoning (pressure test summary).**
+
+`SKILL-PRJ-pressure-test.md` 5/5 cleared with stage-mapped mitigations (full detail in `add-fact-pattern.md` §15).
+
+1. **Break the system (5 ways).** ENTRY-stage spinner-of-doubt (mitigated: render copy from local state); CONFIRM-stage "Confirm vs Continue" ESL ambiguity (mitigated: literal word + visible summary); ENTRY-→-AFTERMATH dad-care interruption (mitigated: Rule 1.2 resume + `proposed`-state rows persisted in `*_facts` from first INPUT, not from CONFIRM); SUGGEST-→-INPUT wrong default (mitigated: Rule 2.2 editable-in-place + Rule 2.1 provenance label); AFTERMATH typo recovery (mitigated: Rule 5.1 edit tertiary returns to INPUT cycle and un-confirms).
+2. **Personas (Apete / advocate / Mia).** AFTERMATH is the divergent stage; Rule 5.2 provenance + Rule 5.3 quiet-discard serve all three.
+3. **Apete misreadings, by stage.** SUGGEST ambiguity, INPUT auto-advance, CONFIRM-as-Continue, AFTERMATH-as-not-saved — each maps to a specific rule.
+4. **Privacy / safety.** APP 1/3/5/6/11 pass; R-004 + R-005 pass (no employer-side surface; info-not-advice copy throughout).
+5. **Reversibility + adaptability contract.** §13 of the spec defines tuning scope per stage. ENTRY / AFTERMATH are independent of all others. SUGGEST / INPUT / CONFIRM have explicit linked-pairs documented. A pattern revision (rather than tuning) is signalled by changes that cross more than one row of the §13 table — that triggers a new ADR.
+
+**Consequences.**
+- **Sprint 7 / 8 / 9 implementation.** Each layer composes the 5 stages with stage-collapse choices documented in `add-fact-pattern.md` §10. Sprint 7 builds a `<FactScreen>`-shaped wrapper that subsumes `Shell.tsx`'s scaffold; Sprints 8 + 9 reuse it.
+- **Pattern explicitly does NOT cover.** OCR-suggested handling (Phase 5; new ADR), `assisted_entered` provenance (Phase 1+; new ADR), multi-period payslip (future ADR if surfaces), per-fact comparison-trigger gating (calc-engine concern per ADR-007).
+- **Reversibility.** A stage-rule change is bounded by the §13 adaptability contract. A whole-pattern revision triggers a new ADR; ADR-012 stays in history per ADRs-are-append-only rule. Cost: one ADR + the affected layer's implementation, not the whole layer trio.
+- **Sprint 7 enforcement.** Sprint 7 must write `proposed`-state rows on first INPUT (not CONFIRM) to satisfy Rule 1.2 (resume). The schema already supports this — `*_facts` rows with `confirmed_at IS NULL` are valid per ADR-001 + `confirmation-flow.md`. No schema change required.
+- **Sprint 6.x retrofit candidates (NOT in this sprint, but flagged in `add-fact-pattern.md`).** `Step6Consent.tsx` `name` prefill missing provenance label (Rule 2.1 violation). `OnboardingFlow.tsx:24` keeps wizard state in `useState` only — won't survive resume. `Step1-5` use "Continue" / "Get started" buttons rather than "Confirm" — those are orientation screens (no fact captured), so the "Confirm" rule technically doesn't apply, BUT future tuning may want to align language even there.
+- **Cross-references.** ADR-001 (confirmation sacred — Rule 4 obeys), ADR-005 (indexing not looping — AFTERMATH doesn't render full history), ADR-006 (orient don't collect — ENTRY one-line carries the orientation), ADR-007 (two gates — pattern feeds the gate-1 confirmation requirement), `SKILL-FACT-confirmation` (Rule 4.1 implements its "Confirm button" mandate), `confirmation-flow.md` (Rule 2.2 + Rule 5.1 implement the proposed/confirmed/edited state machine).
+- **Banked Sprint-6.x candidates.** Five worth surfacing for future polish sprints, not this one: (i) Step6Consent provenance label retrofit; (ii) OnboardingFlow `proposed`-state persistence retrofit; (iii) Step1-5 button-language audit; (iv) `Pill` 5-state taxonomy import from mock; (v) `Money` component as input variant for Sprint 9.
