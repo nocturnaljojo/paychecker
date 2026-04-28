@@ -125,12 +125,13 @@
 ### POL-001 — Privacy policy v1: disclose Anthropic + Voyage as data processors
 - **Severity:** HIGH
 - **Source:** claude-review
-- **Status:** OPEN
+- **Status:** DRAFTED — awaiting lawyer review
 - **Found:** 2026-04-29 by Jovi (Sprint A3 + REF)
 - **What:** Privacy policy v1 (Phase 0 finish-line per ADR-006) must list **Anthropic** AND **Voyage AI** as data processors. Disclose what content travels to each (document content for both; embeddings stored in Supabase but NOT sent back), retention bounds (Anthropic: API session; Voyage: same shape per current ToS), and worker right to refuse upload + use the manual fallback path. R-010 + R-011 in `docs/architecture/risks.md` pin the boundaries.
 - **Why:** APP 1 + APP 3 + APP 5 + APP 6 + APP 8 obligations. Without this disclosure, the upload-first surface (ADR-013) ships without satisfying APP 1 ("open + transparent management") for cross-border disclosure to two new processors. Existing Phase 0 finish-line item per ADR-006; this entry adds the specifics.
 - **Effort:** M (legal-adjacent copy + plain-language explainers + worker-readable surface; ~half-day with legal-adjacent review).
 - **Dependencies:** None for drafting; legal review optional for Phase 0 (ASIC's "personal undertaking" model permits operator self-attestation if accurate).
+- **Drafted:** 2026-04-29 by Sprint POL-001 — `docs/legal/privacy-policy-v1-draft.md`. 12 sections; APP 1/3/5/6/11/12/13 addressed; 5 processors disclosed (Clerk / Supabase / Anthropic / Voyage AI / Vercel); plain-English ESL-readable. Next step: lawyer review (9 outstanding decisions flagged in the draft's "Notes for the operator" section). Status flips to FIXED once the lawyer-reviewed version ships at the actual privacy policy URL with `privacy_policy_version` bumped to `'v1'` in the consent records.
 
 ### POL-002 — Migration 0012 candidate: FK indexes + `(SELECT auth.jwt())` wrapping on early policies
 - **Severity:** LOW
