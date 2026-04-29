@@ -1,14 +1,43 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient, PostgrestError } from '@supabase/supabase-js'
+import {
+  ACCEPTED_MIME_TYPES,
+  type AcceptedMimeType,
+  MAX_FILE_SIZE_BYTES,
+  computeContentHash,
+  generateUnclassifiedPath,
+  validateFile,
+} from '@/features/upload/uploadHelpers'
 
-export const PAYSLIPS_BUCKET = 'payslips'
-export const ALLOWED_MIME_TYPES = [
-  'image/png',
-  'image/jpeg',
-  'application/pdf',
-] as const
-export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024 // 10 MB — mirrors bucket config
+// Single canonical bucket per Migration 0011 + storage-architecture-v01.md.
+// (The pre-Migration-0011 'payslips' bucket alias is kept alive at the storage
+// layer until POL-003 cleanup; this constant points at the new canonical name
+// so all future code paths land in `documents`.)
+export const DOCUMENTS_BUCKET = 'documents'
 
-export type AllowedMimeType = (typeof ALLOWED_MIME_TYPES)[number]
+// Backwards-compat alias for any pre-cutover call sites. ISS-001 closure.
+export const PAYSLIPS_BUCKET = DOCUMENTS_BUCKET
+
+export { ACCEPTED_MIME_TYPES, MAX_FILE_SIZE_BYTES }
+export type { AcceptedMimeType }
+
+// Legacy alias for Sprint 7's manual-fallback path, which historically
+// imported ALLOWED_MIME_TYPES.
+export const ALLOWED_MIME_TYPES = ACCEPTED_MIME_TYPES
+
+export type UploadDocumentResult =
+  | {
+      status: 'uploaded'
+      documentId: string
+      storagePath: string
+    }
+  | {
+      status: 'duplicate'
+      existingDocumentId: string
+    }
+  | {
+      status: 'failed'
+      error: string
+    }
 
 export type UploadPayslipResult = {
   documentId: string
@@ -21,8 +50,6 @@ export type UploadPayslipResult = {
  * Idempotent: read first, insert on miss. RLS allows SELECT/INSERT only
  * when clerk_user_id = auth.jwt() ->> 'sub', so this can never create a
  * row for any other user even if `clerkUserId` is wrong.
- *
- * Call before any operation that needs a workers.id (uploads, fact entry).
  */
 export async function ensureWorker(
   supabase: SupabaseClient,
@@ -46,29 +73,133 @@ export async function ensureWorker(
 }
 
 /**
- * Upload a payslip file to storage and record it in `documents`.
+ * Upload a single document into the upload-first pipeline (per ADR-013).
  *
- * Path layout: `payslips/{workerId}/{uuid}-{safeFilename}`. Storage RLS
- * uses the first folder segment to authorise — `workerId` must be the
- * caller's own workers.id, otherwise the upload is rejected.
+ * Lands the file at the canonical pre-CLASSIFY path
+ *   {worker_uuid}/_unclassified/{ISO-ts}_{4-hex}.{ext}
+ * then INSERTs a `documents` row with state='raw'. Sprint B2 picks up
+ * documents WHERE state='raw' for classification + routing.
  *
- * Client-side validation here mirrors the bucket's allowed_mime_types
- * and file_size_limit so users get a clear local error instead of a
- * generic storage-API rejection. The bucket config is still authoritative.
+ * Idempotency: the (worker_id, content_hash) UNIQUE INDEX (Migration 0011)
+ * catches re-uploads. On a unique violation we return the existing
+ * document_id so the UI can surface "you already uploaded this".
  *
- * On documents-insert failure after a successful upload we leave the
- * storage object as an orphan rather than hard-deleting (no DELETE
- * policy, by design — audit trail integrity). A Phase 1 janitor will
- * sweep orphans by joining storage.objects against documents.
+ * doc_type is set to 'other' as a placeholder; Sprint B2 transitions it
+ * to the classified bucket type.
+ */
+export async function uploadDocument(
+  file: File,
+  supabase: SupabaseClient,
+  workerId: string,
+  batchId: string,
+): Promise<UploadDocumentResult> {
+  const validationError = validateFile(file)
+  if (validationError) {
+    return { status: 'failed', error: validationError }
+  }
+
+  let contentHash: string
+  try {
+    contentHash = await computeContentHash(file)
+  } catch (err) {
+    return {
+      status: 'failed',
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+
+  // Dedup pre-check: if a row already exists with this (worker_id,
+  // content_hash), short-circuit before re-uploading the bytes.
+  const existing = await supabase
+    .from('documents')
+    .select('id')
+    .eq('worker_id', workerId)
+    .eq('content_hash', contentHash)
+    .maybeSingle()
+  if (existing.error) {
+    return { status: 'failed', error: existing.error.message }
+  }
+  if (existing.data) {
+    return {
+      status: 'duplicate',
+      existingDocumentId: existing.data.id as string,
+    }
+  }
+
+  const storagePath = generateUnclassifiedPath(workerId, file)
+
+  const upload = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .upload(storagePath, file, {
+      contentType: file.type,
+      upsert: false,
+    })
+  if (upload.error) {
+    return { status: 'failed', error: upload.error.message }
+  }
+
+  const insert = await supabase
+    .from('documents')
+    .insert({
+      worker_id: workerId,
+      doc_type: 'other',
+      storage_path: storagePath,
+      original_filename: file.name,
+      mime_type: file.type,
+      size_bytes: file.size,
+      batch_id: batchId,
+      content_hash: contentHash,
+      // state defaults to 'raw' (Migration 0011); Sprint B2 transitions it.
+    })
+    .select('id')
+    .single()
+
+  if (insert.error) {
+    // 23505 = unique_violation (the (worker_id, content_hash) constraint).
+    // Race window between the dedup pre-check above and the INSERT.
+    if (isUniqueViolation(insert.error)) {
+      const racy = await supabase
+        .from('documents')
+        .select('id')
+        .eq('worker_id', workerId)
+        .eq('content_hash', contentHash)
+        .maybeSingle()
+      if (racy.data) {
+        return {
+          status: 'duplicate',
+          existingDocumentId: racy.data.id as string,
+        }
+      }
+    }
+    return { status: 'failed', error: insert.error.message }
+  }
+
+  return {
+    status: 'uploaded',
+    documentId: insert.data.id as string,
+    storagePath,
+  }
+}
+
+function isUniqueViolation(err: PostgrestError): boolean {
+  return err.code === '23505'
+}
+
+/**
+ * Legacy single-file upload used by Sprint 7's manual-fallback path
+ * (`EmploymentContractScreen` / `useEmploymentFact`). Preserved for
+ * backwards-compat; new flows should call uploadDocument() instead.
+ *
+ * This signature throws on failure to match the Sprint 7 contract.
  */
 export async function uploadPayslip(
   file: File,
   supabase: SupabaseClient,
   workerId: string,
 ): Promise<UploadPayslipResult> {
-  if (!ALLOWED_MIME_TYPES.includes(file.type as AllowedMimeType)) {
+  if (!ACCEPTED_MIME_TYPES.includes(file.type as AcceptedMimeType)) {
     throw new Error(
-      `File type ${file.type || '(unknown)'} not allowed. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}.`,
+      `File type ${file.type || '(unknown)'} not allowed. Allowed: ${ACCEPTED_MIME_TYPES.join(', ')}.`,
     )
   }
   if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -81,7 +212,7 @@ export async function uploadPayslip(
   const storagePath = `${workerId}/${crypto.randomUUID()}-${safeFilename}`
 
   const upload = await supabase.storage
-    .from(PAYSLIPS_BUCKET)
+    .from(DOCUMENTS_BUCKET)
     .upload(storagePath, file, {
       contentType: file.type,
       upsert: false,
@@ -106,9 +237,7 @@ export async function uploadPayslip(
 }
 
 /**
- * Sign a storage path for download with a TTL.
- * Default 1 hour (3600 s). Use sparingly: signed URLs survive the user's
- * session, so prefer regenerating each view rather than caching.
+ * Sign a storage path for download with a TTL (default 1 hour).
  */
 export async function signPayslipUrl(
   supabase: SupabaseClient,
@@ -116,7 +245,7 @@ export async function signPayslipUrl(
   expiresInSeconds = 3600,
 ): Promise<string> {
   const result = await supabase.storage
-    .from(PAYSLIPS_BUCKET)
+    .from(DOCUMENTS_BUCKET)
     .createSignedUrl(storagePath, expiresInSeconds)
   if (result.error) throw result.error
   return result.data.signedUrl

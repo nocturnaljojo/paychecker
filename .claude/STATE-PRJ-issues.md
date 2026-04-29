@@ -39,14 +39,14 @@
 
 ### ISS-001 — `src/lib/upload.ts` `PAYSLIPS_BUCKET` constant breaks once `payslips` bucket is removed
 - **Severity:** P2
-- **Status:** OPEN
+- **Status:** FIXED
 - **Found:** 2026-04-29 by Jovi (Sprint A5)
 - **Phase:** 0 (Sprint B1 target)
 - **Symptom:** `src/lib/upload.ts:3` hardcodes `PAYSLIPS_BUCKET = 'payslips'`. Migration 0011 created the new `documents` bucket but retained `payslips` as an alias to avoid breaking the existing Sprint 7 manual form. Once the alias is removed (a later cleanup migration after Sprint B1), the constant must already point at `'documents'` or every call in the file fails.
 - **Repro:** none in current state — alias keeps things working. Fails when `payslips` bucket is dropped without updating the constant.
 - **Root cause:** Sprint 7 (`e949ce1`) was designed pre-ADR-013 when `payslips` was the only bucket. ADR-013 introduced a per-type-in-path strategy under a renamed `documents` bucket; the rename + constant-update were intentionally split for safety.
 - **Fix:** Sprint B1 updates `src/lib/upload.ts` constant to `'documents'` AND updates the upload path-shape to match `storage-architecture-v01.md` filename convention. After B1 ships, a follow-up migration removes the `payslips` bucket.
-- **Closed:** _open_
+- **Closed:** 2026-04-29 by Sprint B1. `DOCUMENTS_BUCKET = 'documents'` is now the canonical constant in `src/lib/upload.ts`; `PAYSLIPS_BUCKET` retained as a backwards-compat alias pointing at the same value (so any pre-cutover import path keeps working). Canonical filename pattern `{worker_uuid}/_unclassified/{ISO-ts}_{4-hex}.{ext}` adopted per `storage-architecture-v01.md`. POL-003 (drop the `payslips` bucket alias entirely + remove the constant alias) becomes actionable after B2/B3/D ship.
 
 ### ISS-002 — 9× `unindexed_foreign_keys` performance advisor (pre-existing)
 - **Severity:** P3
