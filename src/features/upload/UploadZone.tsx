@@ -22,6 +22,7 @@ type CombinedStatus =
   | 'reading' // post-upload classify in flight
   | 'auto_routed'
   | 'review_pending'
+  | 'consent_required' // server-side ISS-006 gate fired (post-mount edge case)
 
 export function UploadZone() {
   const navigate = useNavigate()
@@ -105,7 +106,11 @@ export function UploadZone() {
   const allClassified =
     allUploaded &&
     counts.reading === 0 &&
-    (counts.auto_routed > 0 || counts.review_pending > 0 || counts.failed > 0)
+    (counts.auto_routed > 0 ||
+      counts.review_pending > 0 ||
+      counts.failed > 0 ||
+      counts.consent_required > 0)
+  const consentRequiredCount = counts.consent_required
 
   return (
     <main className="flex min-h-screen flex-col bg-pc-bg text-pc-text">
@@ -127,6 +132,25 @@ export function UploadZone() {
       </header>
 
       <div className="flex-1 px-5 pb-8 pt-6">
+        {consentRequiredCount > 0 && (
+          <div
+            role="alert"
+            className="mb-4 rounded-2xl border border-pc-amber-soft bg-pc-amber-soft p-4 text-pc-caption text-pc-text"
+          >
+            <p className="font-medium">
+              Some files couldn't be read until your privacy setup is done.
+            </p>
+            <div className="mt-2">
+              <Button
+                variant="primary"
+                onClick={() => navigate('/onboarding')}
+              >
+                Complete setup
+              </Button>
+            </div>
+          </div>
+        )}
+
         {uploadState.workerError && (
           <div
             role="alert"
@@ -385,6 +409,7 @@ function StatusPill({ status }: { status: CombinedStatus }) {
     auto_routed: { label: 'Saved', className: 'bg-pc-sage-soft text-pc-sage' },
     review_pending: { label: 'Needs your check', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
     failed: { label: 'Couldn\'t read', className: 'bg-pc-coral-soft text-[#7A3B33]' },
+    consent_required: { label: 'Privacy setup first', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
   }
   const { label, className } = map[status]
   return (
@@ -411,6 +436,7 @@ function countByCombinedStatus(rows: DisplayRow[]): CombinedCounts {
     auto_routed: 0,
     review_pending: 0,
     failed: 0,
+    consent_required: 0,
   }
   for (const r of rows) counts[r.combinedStatus] += 1
   return counts
@@ -420,6 +446,7 @@ function summarise(counts: CombinedCounts): string {
   const parts: string[] = []
   if (counts.auto_routed) parts.push(`${counts.auto_routed} saved`)
   if (counts.review_pending) parts.push(`${counts.review_pending} need check`)
+  if (counts.consent_required) parts.push(`${counts.consent_required} privacy setup`)
   if (counts.duplicate) parts.push(`${counts.duplicate} dupes`)
   if (counts.failed) parts.push(`${counts.failed} failed`)
   if (counts.uploading || counts.pending || counts.uploaded || counts.reading) {

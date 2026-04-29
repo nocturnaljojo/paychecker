@@ -177,6 +177,18 @@
 - **Dependencies:** POL-004 ships first (provides input to the adapter); privacy policy v2 update (R-004 mitigation for `dependency_awareness_jsonb` data); ratification of "tone not math" as a non-negotiable in ADR-015.
 - **R-004 elevation:** `worker_context.dependency_awareness_jsonb` (housing via employer, transport via employer, visa sponsorship) is a top-priority redaction target for the operator read-redacted view (Phase 1+ per R-006). Mandatory mitigation before ship.
 
+### POL-008 — RLS-level consent enforcement on `documents` INSERT (Phase 1)
+- **Severity:** MED
+- **Source:** Sprint B1.5 audit + B1.6 fix
+- **Status:** PLANNED — defense-in-depth for Phase 1
+- **Found:** 2026-04-30 by Jovi (Sprint B1.6)
+- **What:** Add an `EXISTS (SELECT 1 FROM consent_records WHERE worker_id = current_worker_id())` predicate to the `documents_self_insert` RLS policy (0002:560). Migration 0013 candidate (or 0014, depending on POL-002-style sequencing). Considered analogous tightening on `worker_classification_facts` / other `*_facts` INSERT policies in the same migration.
+- **Why:** Layers (a) route guard + (c) server-side check shipped in B1.6 handle UI + application-server. RLS is the authoritative gate that survives even server-side bugs (e.g., a future regression in `api/classify.ts` that drops the check, or a new server endpoint that forgets it). Defense-in-depth matters when handling vulnerable-worker data crossing borders. ADR-001 (confirmation sacred) + the Privacy Act APP 1 / 6 / 8 obligations both push toward the strongest available enforcement mechanism, which is PostgreSQL-level RLS.
+- **Effort:** S (~30 min — small migration: ALTER POLICY + advisor verify + smoke test that consent-missing INSERT errors as expected; consent-present INSERT still passes).
+- **Dependencies:** B1.6 layers (a)+(c) ship first (this entry's reason for existing). Migration 0013 ratified separately as either an ADR or a simple migration note.
+- **Residual risk this entry addresses:** Direct service-role DB writes that bypass application-level checks; future code-path regressions in `api/classify.ts` or any new server endpoint that touches `documents`. RLS policy is enforced at PostgreSQL level — cannot be bypassed by JavaScript bugs.
+- **Verification path post-apply:** Re-run a fresh-user smoke (no consent_records row) and attempt INSERT into `documents` directly via `psql --role authenticated`; expect RLS denial. Consent-present user attempts INSERT; expect success. Advisor scan should flag no new performance regressions (the predicate is a single index lookup on `consent_records_worker_id_idx`).
+
 ### POL-006 — Sentiment / Safety Layer
 - **Severity:** LOW
 - **Source:** Apete brainstorm 2026-04-29 + ChatGPT integration critique

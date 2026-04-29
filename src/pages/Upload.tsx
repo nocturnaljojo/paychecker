@@ -1,5 +1,10 @@
+import ConsentRequired from '@/components/layout/ConsentRequired'
 import { UploadZone } from '@/features/upload/UploadZone'
 
 export default function Upload() {
-  return <UploadZone />
+  return (
+    <ConsentRequired>
+      <UploadZone />
+    </ConsentRequired>
+  )
 }

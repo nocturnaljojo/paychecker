@@ -136,6 +136,25 @@ export default async function handler(request: Request): Promise<Response> {
     return jsonResponse(403, { error: 'Worker not found for verified user' })
   }
 
+  // Consent gate (ISS-006 / R-010): refuse to send any document content to
+  // Anthropic before consent_records exists for this worker. Service role
+  // bypasses RLS, so we explicitly filter on the JWT-verified worker_id —
+  // no IDOR risk. Metadata-only logging; never document content.
+  const consent = await supabase
+    .from('consent_records')
+    .select('id', { head: true, count: 'exact' })
+    .eq('worker_id', workerId)
+    .limit(1)
+  if (consent.error) {
+    return jsonResponse(500, { error: consent.error.message })
+  }
+  if ((consent.count ?? 0) === 0) {
+    return jsonResponse(403, {
+      error: 'consent_required',
+      message: 'Privacy setup needs finishing first.',
+    })
+  }
+
   // Load + ownership check.
   const docResult = await supabase
     .from('documents')

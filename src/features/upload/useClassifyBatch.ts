@@ -13,6 +13,7 @@ export type ClassifyStatus =
   | 'auto_routed'
   | 'review_pending'
   | 'failed'
+  | 'consent_required'
 
 export type ClassifyEntry = {
   documentId: string
@@ -112,7 +113,19 @@ async function classifyOne(
       body: JSON.stringify({ document_id: documentId }),
     })
     if (!response.ok) {
-      const errBody = (await safeJson(response)) as { error?: string } | null
+      const errBody = (await safeJson(response)) as
+        | { error?: string; message?: string }
+        | null
+      // 403 + error='consent_required' is the ISS-006 server-side gate.
+      // Surface as a distinct status so UploadZone can show the recovery
+      // banner with a /onboarding link instead of a generic "failed".
+      if (response.status === 403 && errBody?.error === 'consent_required') {
+        updateEntry(setEntries, documentId, {
+          status: 'consent_required',
+          reason: errBody.message ?? 'Privacy setup needs finishing first.',
+        })
+        return
+      }
       updateEntry(setEntries, documentId, {
         status: 'failed',
         reason: errBody?.error ?? `Classify failed (${response.status})`,

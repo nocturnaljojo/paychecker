@@ -81,6 +81,28 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-006 — Upload + manual-fallback pipelines write/process worker data before consent
+- **Severity:** P1
+- **Status:** FIXED
+- **Found:** 2026-04-30 by Codex-style audit during Sprint B1.5 verification pass
+- **Phase:** 0 (Sprint B1.6 target — load-bearing for ship)
+- **Symptom:** New Clerk-authed user can sign in → land on `/upload` → upload payslip → `/api/classify` sends image bytes to Anthropic API across the border BEFORE a `consent_records` row exists for their `worker_id`. Same class of gap exists at `/buckets/employment-contract` (Sprint 7 manual-fallback) — fact rows can be written into `worker_classification_facts` before consent. The manual path is APP 1 only (no cross-border transfer; data stays in Supabase AU); the upload path is APP 1 + APP 6 + R-010 (cross-border to Anthropic).
+- **APP exposure:**
+  - APP 1 — open + transparent management (worker has not seen privacy policy)
+  - APP 6 — use only as disclosed (no disclosed purpose since worker hasn't consented) — upload path only
+  - R-010 — cross-border data transfer (US Anthropic) without prior consent — upload path only
+- **Repro (upload path):** Sign up via Clerk fresh. Navigate directly to `/upload`. Upload any image. `/api/classify` succeeds; `document_classifications` row inserted; `consent_records` does NOT exist. Privacy gap confirmed.
+- **Repro (manual path):** Same fresh signup. Navigate directly to `/buckets/employment-contract`. Type a legal name. `worker_classification_facts` proposed-state row created without consent.
+- **Pre-existing scope:** `ensureWorker` auto-create has existed since pre-B1.5. B1.5 made the failure mode reachable from a cold start (no longer silent). The gap itself pre-dates B1.5; B1.5 just made it visible.
+- **Fix (this sprint, B1.6):** Layer (a) route guard via new `ConsentRequired` component wrapping BOTH `/upload` AND `/buckets/employment-contract` (rationale: APP 1 applies to all data-writing routes, not just the cross-border one). Layer (c) server-side check in `api/classify.ts` (403 with `error: 'consent_required'` if missing). Together: UI gates routes; even if UI bypassed, classify refuses to run.
+- **Residual risk after this sprint:** Direct DB INSERT via service-role-impersonation could still bypass both layers. Layer (d) RLS predicate (POL-008) is the authoritative gate that closes this. Phase 1 priority. A future regression in `api/classify.ts` that removes the check is also covered by POL-008's RLS gate.
+- **Out of scope, captured separately:**
+  - POL-008 — RLS predicate on `documents_self_insert` (defense-in-depth)
+  - Granular per-purpose consent (classify vs extract vs Layer-2 employer-pattern memory) — Phase 1+
+  - Consent revocation flow — Phase 1+ (privacy policy v1 currently treats withdrawal = account deletion; `consent_records` is immutable per `0004:25-38`)
+  - Multi-version consent re-prompting on policy v1 → v2 — Phase 1+
+- **Closed:** 2026-04-30 by Sprint B1.6 commit (see git log).
+
 ### ISS-005 — `ensureWorker()` silent hang on missing workers row
 - **Severity:** P2
 - **Status:** FIXED

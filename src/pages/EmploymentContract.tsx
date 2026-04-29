@@ -1,5 +1,10 @@
+import ConsentRequired from '@/components/layout/ConsentRequired'
 import { EmploymentContractScreen } from '@/features/buckets/employment-contract/EmploymentContractScreen'
 
 export default function EmploymentContract() {
-  return <EmploymentContractScreen />
+  return (
+    <ConsentRequired>
+      <EmploymentContractScreen />
+    </ConsentRequired>
+  )
 }
