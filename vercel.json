@@ -5,7 +5,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     {
-      "source": "/((?!design-system|assets|favicon\\.ico|robots\\.txt).*)",
+      "source": "/((?!api|design-system|assets|@vite|@react-refresh|src|node_modules|favicon\\.ico|robots\\.txt|.*\\.(?:tsx|ts|jsx|js|mjs|css|svg|png|jpg|jpeg|gif|webp|ico|woff|woff2|ttf|eot|map)).*)",
       "destination": "/"
     }
   ]
