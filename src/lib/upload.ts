@@ -47,9 +47,19 @@ export type UploadPayslipResult = {
 /**
  * Ensure a workers row exists for the current Clerk user.
  *
- * Idempotent: read first, insert on miss. RLS allows SELECT/INSERT only
- * when clerk_user_id = auth.jwt() ->> 'sub', so this can never create a
- * row for any other user even if `clerkUserId` is wrong.
+ * Idempotent: read first, auto-create on miss. RLS allows SELECT/INSERT
+ * only when clerk_user_id = auth.jwt() ->> 'sub', so this can never
+ * create a row for any other user even if `clerkUserId` is wrong.
+ *
+ * Auto-create matches ADR-013 upload-first philosophy: a worker can land
+ * directly on /upload before completing the 6-step onboarding (consent +
+ * profile fields are gated separately on `consent_records`, not on the
+ * existence of a workers row). Schema-safe because the only NOT NULL
+ * column without a default on `workers` is `clerk_user_id`.
+ *
+ * On any DB error, throws an Error with a worker-friendly prefix so
+ * callers can surface the message to the UI without leaking raw
+ * Postgres codes. Caller is responsible for catching + handling.
  */
 export async function ensureWorker(
   supabase: SupabaseClient,
@@ -60,7 +70,9 @@ export async function ensureWorker(
     .select('id')
     .eq('clerk_user_id', clerkUserId)
     .maybeSingle()
-  if (existing.error) throw existing.error
+  if (existing.error) {
+    throw new Error(`Couldn't load your account: ${existing.error.message}`)
+  }
   if (existing.data) return existing.data.id as string
 
   const created = await supabase
@@ -68,7 +80,11 @@ export async function ensureWorker(
     .insert({ clerk_user_id: clerkUserId })
     .select('id')
     .single()
-  if (created.error) throw created.error
+  if (created.error) {
+    throw new Error(
+      `Couldn't set up your account: ${created.error.message}`,
+    )
+  }
   return created.data.id as string
 }
 

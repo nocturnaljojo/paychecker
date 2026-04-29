@@ -128,12 +128,28 @@ export function UploadZone() {
 
       <div className="flex-1 px-5 pb-8 pt-6">
         {uploadState.workerError && (
-          <p className="mb-4 rounded-2xl border border-pc-coral-soft bg-pc-coral-soft p-4 text-pc-caption text-pc-text">
-            We couldn't load your account. Try refreshing the page.
-            <span className="mt-1 block font-mono text-[11px] text-pc-text-muted">
+          <div
+            role="alert"
+            className="mb-4 rounded-2xl border border-pc-coral-soft bg-pc-coral-soft p-4 text-pc-caption text-pc-text"
+          >
+            <p className="font-medium">
+              We couldn't set up your upload area.
+            </p>
+            <p className="mt-1">
+              Try refreshing the page. If it keeps happening,{' '}
+              <button
+                type="button"
+                onClick={() => navigate('/onboarding')}
+                className="font-medium text-pc-navy underline hover:text-pc-navy-hover"
+              >
+                finish your account setup
+              </button>{' '}
+              and come back.
+            </p>
+            <span className="mt-2 block font-mono text-[11px] text-pc-text-muted">
               {uploadState.workerError}
             </span>
-          </p>
+          </div>
         )}
 
         <div
@@ -161,7 +177,9 @@ export function UploadZone() {
               variant="primary"
               block
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadState.isResolvingWorker}
+              disabled={
+                uploadState.isResolvingWorker || !!uploadState.workerError
+              }
             >
               Choose files
             </Button>
@@ -169,7 +187,9 @@ export function UploadZone() {
               variant="secondary"
               block
               onClick={() => cameraInputRef.current?.click()}
-              disabled={uploadState.isResolvingWorker}
+              disabled={
+                uploadState.isResolvingWorker || !!uploadState.workerError
+              }
             >
               <span className="inline-flex items-center justify-center gap-2">
                 <Camera size={18} strokeWidth={1.75} />

@@ -81,6 +81,18 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-005 — `ensureWorker()` silent hang on missing workers row
+- **Severity:** P2
+- **Status:** FIXED
+- **Found:** 2026-04-29 by Jovi (Sprint B1+B2 smoke test)
+- **Phase:** 0 (Sprint B1.5 target)
+- **Symptom:** Upload UI hangs at "Waiting" forever when Clerk user has no corresponding workers row. No console error. No UI feedback. Network tab shows workers SELECT returning 200 with 0.4 KB (empty result set), then no storage upload request fires.
+- **Repro:** Sign in with Clerk user that hasn't completed onboarding. Navigate to /upload. Click Choose files. Pick any file. Status pill stays "Waiting" indefinitely.
+- **Root cause:** Two-layer bug. (1) `src/lib/upload.ts` `ensureWorker()` already auto-creates on miss (Sprint B1 left it correct), but raw Postgres errors (RLS denial, network) propagated up without a worker-friendly prefix. (2) `useUploadBatch.startUpload()` early-returned silently when `workerIdRef.current` was null. (3) `UploadZone` re-enabled "Choose files" / "Take a photo" buttons when `isResolvingWorker` cleared, even if `workerError` was set — so the worker could keep adding files into a dead pipeline. The combination produced a "Waiting" pill that never advanced.
+- **Impact:** Any new user who lands on /upload before completing onboarding (or whose worker resolution failed transiently) got a broken experience. Apete-shaped failure mode on day one.
+- **Fix:** **Option (a) AUTO-CREATE + caller/UI hardening.** `ensureWorker()` keeps auto-create (already schema-safe — only `clerk_user_id` is NOT NULL without default; `tier` defaults to `'palm_free'`, `preferred_language` to `'en'`); thrown errors now wrap with worker-friendly prefix. `useUploadBatch.startUpload()` now marks all queued `'pending'` files as `'failed'` with `error: "Account not ready — try refreshing"` when worker resolution failed, so the row pill flips from "Waiting" to "Couldn't read" instead of hanging silently. `UploadZone` now disables the upload buttons when `workerError` is set (not just `isResolvingWorker`), and the error banner uses worker-friendly copy ("We couldn't set up your upload area — try refreshing"). Onboarding flow + consent_records gate untouched (Sprint 7 unchanged).
+- **Closed:** 2026-04-30 by Sprint B1.5 commit (see git log).
+
 ## Closed issues
 
 ### SEC-001 — Clerk dev secret key briefly exposed in chat

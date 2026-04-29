@@ -116,7 +116,27 @@ export function useUploadBatch() {
   const startUpload = useCallback(async () => {
     const workerId = workerIdRef.current
     const batchId = batchIdRef.current
-    if (!workerId || !batchId) return
+
+    // Worker resolution didn't complete (RLS denied, network, etc).
+    // Fail every queued 'pending' file loudly so the UI flips from
+    // "Waiting" to "Couldn't read" instead of hanging silently — closes
+    // ISS-005. The workerError banner above the drop zone explains the
+    // root cause; this just stops the row pill from getting stuck.
+    if (!workerId || !batchId) {
+      setState((prev) => ({
+        ...prev,
+        files: prev.files.map((f) =>
+          f.status === 'pending'
+            ? {
+                ...f,
+                status: 'failed' as const,
+                error: 'Account not ready — try refreshing.',
+              }
+            : f,
+        ),
+      }))
+      return
+    }
 
     // Snapshot pending files once; new files added mid-upload aren't picked up
     // until the next startUpload() call.
