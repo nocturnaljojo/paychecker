@@ -177,6 +177,30 @@
 - **Dependencies:** POL-004 ships first (provides input to the adapter); privacy policy v2 update (R-004 mitigation for `dependency_awareness_jsonb` data); ratification of "tone not math" as a non-negotiable in ADR-015.
 - **R-004 elevation:** `worker_context.dependency_awareness_jsonb` (housing via employer, transport via employer, visa sponsorship) is a top-priority redaction target for the operator read-redacted view (Phase 1+ per R-006). Mandatory mitigation before ship.
 
+### POL-009 — `useUploadBatch` two-parallel-sources-of-truth refactor (Phase 1+)
+- **Severity:** MED
+- **Source:** Codex adversarial review during Sprint B1.7
+- **Status:** PLANNED — Phase 1+ hardening
+- **Found:** 2026-04-30 by Codex adversarial review (root-cause investigation that surfaced ISS-007)
+- **What:** `src/features/upload/useUploadBatch.ts` currently maintains two parallel sources of truth: `state.workerId` mirrored by `workerIdRef.current`, and `state.batchId` mirrored by `batchIdRef.current`. They must be kept in lock-step manually with zero compiler enforcement and zero tests. ISS-007 was exactly the failure mode this pattern predicts — a writer forgot to keep the ref in sync with state, and the bug only surfaced on the first browser smoke. Refactor to one of:
+  - **(a)** Pass `workerId`/`batchId` as explicit parameters to `startUpload(workerId, batchId, files)`. Drop the refs entirely. The caller (`UploadZone`) reads from `uploadState`. Stale closures become caller-visible: if React hasn't flushed yet, the values aren't there, the click cycle waits one render. No refs, no shadow state, no race.
+  - **(b)** Move the entire upload-state machine into a `useReducer`. `addFiles` and `startUpload` become dispatched actions on the same state machine, processed in order. The reducer never reads from refs.
+- **Why:** Either is structurally less buggy than refs-mirroring-state. Worth a Phase 1+ hardening pass with tests that exercise the click cycle, including the once-burned "first click after mount" path.
+- **Effort:** M (~60-90 min — touches `useUploadBatch` + `UploadZone` caller; test additions).
+- **Dependencies:** B1.7 ships first (closes the immediate bug). Refactor lands in a Phase 1 hardening sprint after SMOKE-001 confirms the surgical fix is sufficient.
+
+### POL-010 — Distinguish worker-null vs batch-null in `startUpload` loud-fail branch
+- **Severity:** LOW
+- **Source:** Codex adversarial review during Sprint B1.7
+- **Status:** PLANNED — minor copy + invariant assertion
+- **Found:** 2026-04-30 by Codex adversarial review
+- **What:** B1.5's loud-fail branch at `useUploadBatch.ts:125-139` fires for ANY null read of either ref, conflating two distinct failure modes. After B1.7, batch-null should be impossible by invariant (the ref is set synchronously before `startUpload` reads it). POL-010: split the branch into two distinct paths:
+  - `if (!workerId) → 'Account not ready — try refreshing.'` (real auth issue; user-facing copy stays as is)
+  - `if (!batchId) → throw new Error('batch invariant violated')` (control-flow bug; crash loudly so the next regression in this shape is caught immediately, not papered over with a misleading user message)
+- **Why:** Misleading copy is what made ISS-007 hard to diagnose — the network tab said "worker resolved" but the UI said "Account not ready". Different failure modes deserve different handling. Crashing on the impossible case turns the next regression into a fast obvious failure rather than a slow surface-level smoke.
+- **Effort:** S (~15 min — split the conditional + add the throw + manual smoke).
+- **Dependencies:** B1.7 ships first. POL-010 is post-B1.7 polish; can bundle with POL-009 in the same hardening sprint.
+
 ### POL-008 — RLS-level consent enforcement on `documents` INSERT (Phase 1)
 - **Severity:** MED
 - **Source:** Sprint B1.5 audit + B1.6 fix

@@ -81,6 +81,20 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-007 — `addFiles` setState-updater race causes deterministic first-click failure
+- **Severity:** P1
+- **Status:** FIXED
+- **Found:** 2026-04-30 by Codex adversarial review (post-Sprint-B1.6 smoke surface)
+- **Phase:** 0 (Sprint B1.7 target — load-bearing for SMOKE-001)
+- **Symptom:** First Choose-Files click after every hard refresh deterministically fails with status pill "Couldn't read" + reason "ACCOUNT NOT READY — TRY REFRESHING". Network log shows workers SELECT 200 (resolved) but NO storage upload request, NO `/api/classify` request, NO `documents` INSERT. Hard refresh doesn't fix it — same failure on every cold first click.
+- **Repro:** Sign in with onboarding-completed worker (consent record exists). Navigate to /upload. ConsentRequired passes. Click Choose Files. Pick any file. Pill flips to failed with the misleading copy.
+- **Root cause (per Codex diagnosis):** `src/features/upload/useUploadBatch.ts:90` — `batchIdRef.current = nextBatchId` is assigned INSIDE the `setState((prev) => { ... })` updater. React 18 batches functional setState updaters; the updater (and its side-effect ref assignment) runs deferred during the next render commit, not synchronously when `setState` is called. `UploadZone.onPickFiles` calls `addFiles(files)` then synchronously calls `void startUpload()` on the same event tick. `startUpload` reads `batchIdRef.current` → still null → falls into B1.5's loud-fail branch (line 125-139) which assumes any null ref = worker-not-resolved.
+- **Why the message misled:** B1.5 collapsed two distinct null-states (worker-not-resolved vs batch-not-yet-assigned) into a single error branch with a single piece of copy. Network tab showed worker SELECT succeeding because the worker WAS resolved — `workerIdRef.current` is set fine. The actual null was `batchIdRef.current`. POL-010 captures the copy split for follow-up.
+- **Pre-existing:** Yes — bug introduced in commit `1d05e08` (Sprint B1) when `addFiles` was first written. B1.5 made it visible (loud failure replacing the prior silent hang). B1.6 didn't touch this surface. Neither sprint browser-smoke-tested the happy path, so the bug surfaced only on the first real upload attempt.
+- **Fix (this sprint, B1.7):** Lift `batchIdRef.current = nextBatchId` OUT of the setState updater. Compute `nextBatchId` synchronously from the ref (not from `prev.batchId`, which would still be a stale-closure read against the latest ref). Assign the ref synchronously, then call `setState` with a pure updater that mirrors the ref into visible state. Surgical: ~5 lines moved.
+- **Residual risk:** None for the immediate bug. Architectural smell (refs-mirroring-state with manual lock-step) captured as POL-009 for Phase 1+ refactor. Loud-fail-branch copy ambiguity captured as POL-010.
+- **Closed:** 2026-04-30 by Sprint B1.7 commit (see git log).
+
 ### ISS-006 — Upload + manual-fallback pipelines write/process worker data before consent
 - **Severity:** P1
 - **Status:** FIXED

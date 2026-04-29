@@ -85,26 +85,32 @@ export function useUploadBatch() {
    */
   const addFiles = useCallback((files: File[]) => {
     if (files.length === 0) return
-    setState((prev) => {
-      const nextBatchId = prev.batchId ?? generateBatchId()
-      batchIdRef.current = nextBatchId
 
-      const entries: FileEntry[] = files.map((file) => {
-        const validationError = validateFile(file)
-        return {
-          id: crypto.randomUUID(),
-          file,
-          status: validationError ? 'failed' : 'pending',
-          error: validationError ?? undefined,
-        }
-      })
+    // ISS-007: assign batchIdRef synchronously BEFORE setState. React 18
+    // batches functional setState updaters; refs assigned inside an
+    // updater run deferred and are still null when startUpload reads
+    // them on the same event tick (UploadZone.onPickFiles calls addFiles
+    // then startUpload synchronously back-to-back). Read from the ref —
+    // not prev.batchId — so this is also robust if the caller queues
+    // multiple addFiles within one tick before any commit.
+    const nextBatchId = batchIdRef.current ?? generateBatchId()
+    batchIdRef.current = nextBatchId
 
+    const entries: FileEntry[] = files.map((file) => {
+      const validationError = validateFile(file)
       return {
-        ...prev,
-        batchId: nextBatchId,
-        files: [...prev.files, ...entries],
+        id: crypto.randomUUID(),
+        file,
+        status: validationError ? 'failed' : 'pending',
+        error: validationError ?? undefined,
       }
     })
+
+    setState((prev) => ({
+      ...prev,
+      batchId: nextBatchId,
+      files: [...prev.files, ...entries],
+    }))
   }, [])
 
   /**
