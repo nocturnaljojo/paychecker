@@ -50,25 +50,25 @@
 
 ### ISS-002 — 9× `unindexed_foreign_keys` performance advisor (pre-existing)
 - **Severity:** P3
-- **Status:** OPEN
+- **Status:** FIXED
 - **Found:** 2026-04-29 by Jovi (Sprint A5)
 - **Phase:** 0 (cross-cutting)
 - **Symptom:** Supabase performance advisor flags FK columns without covering indexes on `bank_deposit_facts.source_doc_id`, `payslip_facts.employer_id`, `payslip_facts.source_doc_id`, `shift_facts.employer_id`, `shift_facts.source_doc_id`, `super_contribution_facts.source_doc_id`, `worker_classification_facts.award_id`, `worker_classification_facts.employer_id`, `worker_classification_facts.source_doc_id`. Pre-existing — NOT introduced by Migration 0011.
 - **Repro:** Supabase MCP `get_advisors(type='performance')` returns 9 INFO-level rows for these FKs.
 - **Root cause:** Migrations 0002 + 0005 created FK constraints without explicit covering indexes. At Phase 0 row counts (≤ tens of rows per table) the impact is negligible; at Phase 1+ scale this becomes real.
 - **Fix:** see IMP-NNN — Migration 0012 candidate (FK indexes on `*_facts`).
-- **Closed:** _open_
+- **Closed:** 2026-04-29 by Migration 0012 (Sprint POL-002-APPLY). Advisor scan post-apply: `unindexed_foreign_keys` count cleared from 9 → 0; all 9 indexes verified present via direct `pg_indexes` query.
 
-### ISS-003 — 7× `auth_rls_initplan` performance advisor (pre-existing)
+### ISS-003 — 8× `auth_rls_initplan` performance advisor (pre-existing — note: ISS-003 originally said 7; live advisor + pg_policy confirmed 8)
 - **Severity:** P3
-- **Status:** OPEN
+- **Status:** FIXED
 - **Found:** 2026-04-29 by Jovi (Sprint A5)
 - **Phase:** 0 (cross-cutting)
 - **Symptom:** Supabase performance advisor flags WARN-level entries on policies for `workers`, `employers`, `awards`, `award_rates`, `award_allowances` — these policies call `auth.jwt()` directly instead of `(SELECT auth.jwt())` so the planner re-evaluates per row. Pre-existing — NOT introduced by Migration 0011.
 - **Repro:** Supabase MCP `get_advisors(type='performance')` returns 7 WARN-level entries with rule `auth_rls_initplan`.
 - **Root cause:** Migrations 0002 + 0005 + 0007 wrote policies before this Supabase advisor existed; the `(SELECT ...)` wrapping pattern was adopted later (Migration 0009 + 0010 use it correctly).
 - **Fix:** see IMP-NNN — Migration 0012 candidate would also re-write these 7 policies with `(SELECT auth.jwt())` wrapping. Bundle with the FK index work.
-- **Closed:** _open_
+- **Closed:** 2026-04-29 by Migration 0012 (Sprint POL-002-APPLY). All 8 policies (3 on `workers`, 2 on `employers`, 1 each on `awards` / `award_rates` / `award_allowances`) rewritten with `( SELECT (auth.jwt() ->> 'sub'::text))` wrapping. Verified directly via `pg_policy` query — every policy body now contains the SELECT-wrapped form. **Note on advisor cache:** the `auth_rls_initplan` advisor lint output remained stale at 8 entries immediately post-apply (cache_key based), despite the policies being structurally correct in the live DB. Truth source = `pg_policy`. The advisor is expected to refresh on its next cycle. The `unindexed_foreign_keys` advisor cleared immediately, suggesting per-rule cache TTLs differ.
 
 ### ISS-004 — `unused_index` advisors on Migration 0011 + pre-existing tables
 - **Severity:** P3

@@ -136,12 +136,14 @@
 ### POL-002 — Migration 0012 candidate: FK indexes + `(SELECT auth.jwt())` wrapping on early policies
 - **Severity:** LOW
 - **Source:** audit
-- **Status:** OPEN
+- **Status:** FIXED
 - **Found:** 2026-04-29 by Jovi (Sprint A5)
 - **What:** Bundle two pre-existing tech-debt fixes into a single migration (0012 candidate). (1) Add covering indexes on the 9 FK columns flagged in ISS-002 (`*_facts.source_doc_id`, `*_facts.employer_id`, `worker_classification_facts.award_id`). (2) Re-write the 7 policies flagged in ISS-003 with `(SELECT auth.jwt())` wrapping pattern (workers / employers / awards / award_rates / award_allowances).
 - **Why:** Closes 16 advisor lints in one migration. Performance impact at Phase 0 is negligible; at Phase 1+ traffic, both become real. Phase 0 cost is small; deferring past Phase 1+ launch costs more.
 - **Effort:** S (~30 min — DDL drafting + verification + advisor re-run).
 - **Dependencies:** None. Can ship any time; ideally bundled with another migration to amortise the apply step.
+- **Drafted:** 2026-04-28 by Sprint POL-002-PREP (commit `9a5e2da`).
+- **Applied:** 2026-04-29 by Sprint POL-002-APPLY via Supabase MCP `apply_migration`. 9 FK indexes created; 8 RLS policies rewritten (DROP + CREATE; original NAME / COMMAND / USING/WITH CHECK shape preserved). Verified via direct `pg_indexes` + `pg_policy` queries. ISS-002 + ISS-003 closed in same sprint. Note: the `auth_rls_initplan` advisor showed stale cache (8 entries) immediately post-apply despite the policies being structurally correct — pg_policy is the truth source.
 
 ### POL-003 — Migration 0013 candidate: `payslips` bucket cleanup post-Sprint-B1
 - **Severity:** LOW
