@@ -1,5 +1,7 @@
 import {
   useCallback,
+  useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -11,15 +13,49 @@ import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 import { ACCEPTED_MIME_TYPES } from '@/lib/upload'
 import { useUploadBatch, type FileEntry, type FileStatus } from './useUploadBatch'
+import { useClassifyBatch, type ClassifyStatus } from './useClassifyBatch'
 
 const ACCEPT_ATTR = ACCEPTED_MIME_TYPES.join(',')
 
+type CombinedStatus =
+  | FileStatus // 'pending' | 'uploading' | 'uploaded' | 'duplicate' | 'failed'
+  | 'reading' // post-upload classify in flight
+  | 'auto_routed'
+  | 'review_pending'
+
 export function UploadZone() {
   const navigate = useNavigate()
-  const { state, addFiles, startUpload } = useUploadBatch()
+  const { state: uploadState, addFiles, startUpload } = useUploadBatch()
+  const { entries: classifyEntries, classifyBatch } = useClassifyBatch()
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Track which documentIds have already been queued for classify so the
+  // chain effect doesn't re-trigger a fetch on every render.
+  const queuedClassifyRef = useRef<Set<string>>(new Set())
+
+  // Chain: when an upload reaches 'uploaded' status, queue its document_id
+  // for classification. Duplicates get queued too — the API will return the
+  // existing classification idempotently.
+  useEffect(() => {
+    const fresh: string[] = []
+    for (const f of uploadState.files) {
+      const docId =
+        f.status === 'uploaded'
+          ? f.documentId
+          : f.status === 'duplicate'
+            ? f.existingDocumentId
+            : undefined
+      if (!docId) continue
+      if (queuedClassifyRef.current.has(docId)) continue
+      queuedClassifyRef.current.add(docId)
+      fresh.push(docId)
+    }
+    if (fresh.length > 0) {
+      void classifyBatch(fresh)
+    }
+  }, [uploadState.files, classifyBatch])
 
   const onPickFiles = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
@@ -27,7 +63,6 @@ export function UploadZone() {
       if (files.length === 0) return
       addFiles(files)
       void startUpload()
-      // reset the input so the same file can be picked again later
       e.target.value = ''
     },
     [addFiles, startUpload],
@@ -55,11 +90,22 @@ export function UploadZone() {
     setIsDragging(false)
   }, [])
 
-  const counts = countByStatus(state.files)
-  const allDone =
-    state.files.length > 0 &&
+  // Build the merged display list — one entry per file with the latest
+  // status from either upload or classify side.
+  const rows = useMemo(
+    () => mergeRows(uploadState.files, classifyEntries),
+    [uploadState.files, classifyEntries],
+  )
+
+  const counts = countByCombinedStatus(rows)
+  const allUploaded =
+    uploadState.files.length > 0 &&
     counts.pending === 0 &&
     counts.uploading === 0
+  const allClassified =
+    allUploaded &&
+    counts.reading === 0 &&
+    (counts.auto_routed > 0 || counts.review_pending > 0 || counts.failed > 0)
 
   return (
     <main className="flex min-h-screen flex-col bg-pc-bg text-pc-text">
@@ -81,11 +127,11 @@ export function UploadZone() {
       </header>
 
       <div className="flex-1 px-5 pb-8 pt-6">
-        {state.workerError && (
+        {uploadState.workerError && (
           <p className="mb-4 rounded-2xl border border-pc-coral-soft bg-pc-coral-soft p-4 text-pc-caption text-pc-text">
             We couldn't load your account. Try refreshing the page.
             <span className="mt-1 block font-mono text-[11px] text-pc-text-muted">
-              {state.workerError}
+              {uploadState.workerError}
             </span>
           </p>
         )}
@@ -115,7 +161,7 @@ export function UploadZone() {
               variant="primary"
               block
               onClick={() => fileInputRef.current?.click()}
-              disabled={state.isResolvingWorker}
+              disabled={uploadState.isResolvingWorker}
             >
               Choose files
             </Button>
@@ -123,7 +169,7 @@ export function UploadZone() {
               variant="secondary"
               block
               onClick={() => cameraInputRef.current?.click()}
-              disabled={state.isResolvingWorker}
+              disabled={uploadState.isResolvingWorker}
             >
               <span className="inline-flex items-center justify-center gap-2">
                 <Camera size={18} strokeWidth={1.75} />
@@ -150,32 +196,49 @@ export function UploadZone() {
           />
         </div>
 
-        {state.files.length > 0 && (
+        {rows.length > 0 && (
           <section className="mt-6">
             <div className="mb-3 flex items-baseline justify-between">
               <h2 className="text-pc-h2 font-semibold text-pc-text">
-                This batch
+                {!allUploaded
+                  ? 'This batch'
+                  : !allClassified
+                    ? 'Reading them now'
+                    : 'Done'}
               </h2>
               <span className="font-mono text-[11px] uppercase tracking-wide text-pc-text-muted">
                 {summarise(counts)}
               </span>
             </div>
             <ul className="flex flex-col gap-2">
-              {state.files.map((entry) => (
-                <FileRow key={entry.id} entry={entry} />
+              {rows.map((row) => (
+                <RowItem key={row.id} row={row} />
               ))}
             </ul>
           </section>
         )}
 
-        {allDone && (
+        {allClassified && (
           <section className="mt-6 rounded-2xl border border-pc-border bg-pc-sage-soft p-4">
             <div className="text-pc-body font-medium text-pc-text">
-              Got your files. We'll read them next.
+              {counts.review_pending > 0
+                ? 'Some need your check'
+                : counts.failed > 0
+                  ? 'Some couldn\'t be read'
+                  : 'All set'}
             </div>
             <p className="mt-1 text-pc-caption text-pc-text">
-              Reading is the next step — coming soon.
+              {counts.review_pending > 0
+                ? `${counts.review_pending} document${counts.review_pending === 1 ? '' : 's'} need a quick check before we save them.`
+                : counts.failed > 0
+                  ? 'You can re-upload, or enter your details manually below.'
+                  : 'We saved your documents. Reading the values is the next step.'}
             </p>
+            <div className="mt-3">
+              <Button variant="primary" onClick={() => navigate('/dashboard')}>
+                Continue
+              </Button>
+            </div>
           </section>
         )}
 
@@ -194,24 +257,80 @@ export function UploadZone() {
   )
 }
 
-function FileRow({ entry }: { entry: FileEntry }) {
+// ─────────────────────────────────────────────────────────────────
+// Row + helpers
+// ─────────────────────────────────────────────────────────────────
+
+type DisplayRow = {
+  id: string // local UI id (FileEntry.id)
+  fileName: string
+  fileMime: string
+  fileSize: number
+  combinedStatus: CombinedStatus
+  errorMessage?: string
+}
+
+function mergeRows(
+  files: FileEntry[],
+  classify: ReadonlyArray<{
+    documentId: string
+    status: ClassifyStatus
+    reason?: string
+  }>,
+): DisplayRow[] {
+  const classifyByDoc = new Map(classify.map((c) => [c.documentId, c]))
+
+  return files.map((f): DisplayRow => {
+    const docId =
+      f.status === 'uploaded'
+        ? f.documentId
+        : f.status === 'duplicate'
+          ? f.existingDocumentId
+          : undefined
+    const classifyEntry = docId ? classifyByDoc.get(docId) : undefined
+
+    let status: CombinedStatus = f.status
+    let errorMessage = f.error
+    if (classifyEntry && f.status === 'uploaded') {
+      // Upload finished; classify state is the live one.
+      status = classifyEntry.status === 'idle' ? 'reading' : classifyEntry.status
+      errorMessage = classifyEntry.reason
+    } else if (classifyEntry && f.status === 'duplicate') {
+      // Duplicate uploads also flow through classify (idempotent server-side).
+      status = classifyEntry.status === 'idle' ? 'duplicate' : classifyEntry.status
+      errorMessage = classifyEntry.reason
+    } else if (f.status === 'uploaded') {
+      // Just uploaded; classify hasn't kicked off yet (mid-effect).
+      status = 'reading'
+    }
+
+    return {
+      id: f.id,
+      fileName: f.file.name,
+      fileMime: f.file.type,
+      fileSize: f.file.size,
+      combinedStatus: status,
+      errorMessage,
+    }
+  })
+}
+
+function RowItem({ row }: { row: DisplayRow }) {
   return (
     <li className="flex items-center justify-between gap-3 rounded-2xl border border-pc-border bg-pc-surface p-3">
       <div className="flex items-center gap-3 min-w-0">
-        <FileIcon mime={entry.file.type} />
+        <FileIcon mime={row.fileMime} />
         <div className="min-w-0">
-          <div className="truncate text-pc-body text-pc-text">
-            {entry.file.name}
-          </div>
+          <div className="truncate text-pc-body text-pc-text">{row.fileName}</div>
           <div className="font-mono text-[11px] uppercase tracking-wide text-pc-text-muted">
-            {formatSize(entry.file.size)}
-            {entry.error && (
-              <span className="ml-2 text-pc-coral">{entry.error}</span>
+            {formatSize(row.fileSize)}
+            {row.errorMessage && (
+              <span className="ml-2 text-pc-coral break-words">{row.errorMessage}</span>
             )}
           </div>
         </div>
       </div>
-      <StatusPill status={entry.status} />
+      <StatusPill status={row.combinedStatus} />
     </li>
   )
 }
@@ -236,31 +355,16 @@ function FileIcon({ mime }: { mime: string }) {
   )
 }
 
-function StatusPill({ status }: { status: FileStatus }) {
-  const map: Record<
-    FileStatus,
-    { label: string; className: string }
-  > = {
-    pending: {
-      label: 'Waiting',
-      className: 'bg-pc-border text-pc-text-muted',
-    },
-    uploading: {
-      label: 'Uploading…',
-      className: 'bg-pc-navy-soft text-pc-navy',
-    },
-    uploaded: {
-      label: 'Uploaded',
-      className: 'bg-pc-sage-soft text-pc-sage',
-    },
-    duplicate: {
-      label: 'Already uploaded',
-      className: 'bg-pc-amber-soft text-[#7A5A1E]',
-    },
-    failed: {
-      label: 'Failed',
-      className: 'bg-pc-coral-soft text-[#7A3B33]',
-    },
+function StatusPill({ status }: { status: CombinedStatus }) {
+  const map: Record<CombinedStatus, { label: string; className: string }> = {
+    pending: { label: 'Waiting', className: 'bg-pc-border text-pc-text-muted' },
+    uploading: { label: 'Uploading…', className: 'bg-pc-navy-soft text-pc-navy' },
+    uploaded: { label: 'Uploaded', className: 'bg-pc-sage-soft text-pc-sage' },
+    duplicate: { label: 'Already uploaded', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
+    reading: { label: 'Reading…', className: 'bg-pc-navy-soft text-pc-navy' },
+    auto_routed: { label: 'Saved', className: 'bg-pc-sage-soft text-pc-sage' },
+    review_pending: { label: 'Needs your check', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
+    failed: { label: 'Couldn\'t read', className: 'bg-pc-coral-soft text-[#7A3B33]' },
   }
   const { label, className } = map[status]
   return (
@@ -275,25 +379,33 @@ function StatusPill({ status }: { status: FileStatus }) {
   )
 }
 
-function countByStatus(files: FileEntry[]) {
-  const counts: Record<FileStatus, number> = {
+type CombinedCounts = Record<CombinedStatus, number>
+
+function countByCombinedStatus(rows: DisplayRow[]): CombinedCounts {
+  const counts: CombinedCounts = {
     pending: 0,
     uploading: 0,
     uploaded: 0,
     duplicate: 0,
+    reading: 0,
+    auto_routed: 0,
+    review_pending: 0,
     failed: 0,
   }
-  for (const f of files) counts[f.status] += 1
+  for (const r of rows) counts[r.combinedStatus] += 1
   return counts
 }
 
-function summarise(counts: Record<FileStatus, number>): string {
+function summarise(counts: CombinedCounts): string {
   const parts: string[] = []
-  if (counts.uploaded) parts.push(`${counts.uploaded} uploaded`)
+  if (counts.auto_routed) parts.push(`${counts.auto_routed} saved`)
+  if (counts.review_pending) parts.push(`${counts.review_pending} need check`)
   if (counts.duplicate) parts.push(`${counts.duplicate} dupes`)
   if (counts.failed) parts.push(`${counts.failed} failed`)
-  if (counts.uploading || counts.pending) {
-    parts.push(`${counts.uploading + counts.pending} in flight`)
+  if (counts.uploading || counts.pending || counts.uploaded || counts.reading) {
+    parts.push(
+      `${counts.uploading + counts.pending + counts.uploaded + counts.reading} in flight`,
+    )
   }
   return parts.join(' · ')
 }

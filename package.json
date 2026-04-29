@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.91.1",
+    "@clerk/backend": "^3.4.1",
     "@clerk/clerk-react": "^5.61.6",
     "@supabase/supabase-js": "^2.104.1",
     "class-variance-authority": "^0.7.1",
