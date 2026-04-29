@@ -153,6 +153,44 @@
 - **Effort:** S (~10 min — small migration + verification + advisor re-run).
 - **Dependencies:** ISS-001 closed (Sprint B1 ships upload.ts update).
 
+### POL-004 — Calculation Explanation Layer
+- **Severity:** HIGH
+- **Source:** Apete brainstorm 2026-04-29 + ChatGPT integration critique
+- **Status:** PLANNED — integration shape locked, awaits ADR-014 ratification
+- **Found:** 2026-04-29 by Jovi (Sprint INTEG-001)
+- **What:** Insert a new component BETWEEN Calc Engine (Sprint E) and Comparison Output. Operationalises ADR-009's §"Reporting requirement" + ADR-007's gate-3. New table `calculation_explanations` (Migration 0013 candidate) with `comparison_id` FK, `result_type`, `status` (calculator-language enum: `matches` / `difference_found` / `needs_checking` / `cannot_calculate` / `missing_information`; legal-language values forbidden per ADR-003), `reason_code`, `explanation_jsonb`, `sources_jsonb`, `checks_needed_jsonb`. Detailed integration shape lives in `docs/architecture/integration-plan-v01.md` Layer A.
+- **Why:** Bare numbers reaching the worker violate ADR-003 (info not advice) at scale. ADR-009 already mandates a "How we computed this" surface but the schema doesn't structurally support it. POL-004 closes the gap: comparison cannot render without an explanation row attached.
+- **Effort:** M (Phase 1+ build — ADR-014 ratification + Migration 0013 + composer logic + renderer integration).
+- **Dependencies:** Sprint E ships first; Sprint E's design must adopt the **NEW DESIGN CONSTRAINT** flagged below.
+- **Sprint E DESIGN CONSTRAINT (added by Sprint INTEG-001 audit):** Sprint E's output (`comparisons.expected_amounts` jsonb) MUST expose structured metadata: `inputs_used` (fact-id list + values consumed), `rules_applied` (calc-rules-v01 rule-id list), `sources_used` (award_rates / award_allowances ids + effective-from + document references), `checks_needed` (unresolved questions). Without this, POL-004 retrofit later is impossible for past comparisons (immutable per ADR-005). **Day-1 inclusion is operationally required.**
+
+### POL-005 — Worker Context Layer
+- **Severity:** MED
+- **Source:** Apete brainstorm 2026-04-29 + ChatGPT integration critique
+- **Status:** PLANNED — integration shape locked, awaits ADR-015 ratification
+- **Found:** 2026-04-29 by Jovi (Sprint INTEG-001)
+- **What:** New table `worker_context` (Migration 0014 candidate) holding self-declared identity + preference (visa status, ESL preference, explanation depth, dependency awareness, preferred address form / locale). Distinct from Layer 3 memory (`worker_extraction_preferences` is OBSERVED via EMA; Worker Context is SELF-DECLARED via Settings UI). Integration shape: pre-render adapter between Calculation Explanation Layer (POL-004) and worker UI. Detailed shape in `integration-plan-v01.md` Layer B.
+- **Why:** ADR-003 framing rules (info not advice) need tone adaptation for ESL workers and PALM-cohort cultural context without ever changing the calc result. Worker Context provides that adapter input. Critical guardrail: adapts TONE, never MATH.
+- **Effort:** M (Phase 1+ build — ADR-015 ratification + Migration 0014 + Settings UI + pre-render adapter logic).
+- **Dependencies:** POL-004 ships first (provides input to the adapter); privacy policy v2 update (R-004 mitigation for `dependency_awareness_jsonb` data); ratification of "tone not math" as a non-negotiable in ADR-015.
+- **R-004 elevation:** `worker_context.dependency_awareness_jsonb` (housing via employer, transport via employer, visa sponsorship) is a top-priority redaction target for the operator read-redacted view (Phase 1+ per R-006). Mandatory mitigation before ship.
+
+### POL-006 — Sentiment / Safety Layer
+- **Severity:** LOW
+- **Source:** Apete brainstorm 2026-04-29 + ChatGPT integration critique
+- **Status:** DEFERRED — explicit conjunctive re-trigger conditions
+- **Found:** 2026-04-29 by Jovi (Sprint INTEG-001)
+- **What:** A future sentiment/safety surface that monitors worker affective state and surfaces safety nudges. NOT designed today. NOT modelled today. Detailed deferral analysis in `integration-plan-v01.md` Layer C.
+- **Why deferred:** Nearest the boundary between info-tool and advice-tool (ADR-003 risk). ESL classifier risk (generic English sentiment misreads ESL emotional valence). APP 6 disclosure gap (sentiment classification crosses "use only as disclosed"). Workplace dependency cascade unmodeled.
+- **Re-trigger conditions (ALL conjunctive — not disjunctive):**
+  1. Real-world Phase 1 data shows tone adaptation BEYOND Worker Context self-declaration is needed (concrete signal from Apete or cohort).
+  2. Sentiment classifier validated on ESL text (PALM corpus or Pacific-Islander English benchmark).
+  3. Privacy policy v3 update designed (sentiment-specific disclosure + worker opt-in).
+  4. ADR-016 ratified with explicit "advice vs information" boundary acknowledgment.
+  5. Workplace dependency consequences modelled (sentiment + employer-controlled-housing cascade).
+- **If any one is missing: defer.** Until ALL hit, no design work.
+- **Effort:** L (Phase 2+ — full ADR + new processor disclosure + classifier validation + UI design).
+
 ### INFRA-007 — Install `poppler` / `pdftotext` for PDF extraction in research workflow
 - **Severity:** MED
 - **Source:** audit

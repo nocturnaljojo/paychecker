@@ -19,6 +19,7 @@
 | `SKILL-PRJ-retro.md` | Writing the session retro |
 | `SKILL-PRJ-idea-to-execution.md` | ANY new feature / idea / architectural direction |
 | `SKILL-PRJ-audit-before-build.md` | Before adding code in an unfamiliar area |
+| `SKILL-PRJ-architectural-integration.md` | Whenever a new concept / layer / capability is proposed — 4-step audit ensures it integrates with the existing pipeline rather than entering as a standalone |
 | `SKILL-PRJ-pressure-test.md` | Pre-build failure-mode surfacing — runs between idea-to-execution steps 4 and 5 |
 | `SKILL-AWARD-add-new.md` | Adding a new Modern Award |
 | `SKILL-FACT-confirmation.md` | Building any flow that captures or confirms a worker fact |
@@ -71,6 +72,7 @@
 | `architecture/layered-memory-v01.md` | 4-layer memory read/write paths + privacy boundaries (Sprint A4). |
 | `architecture/extraction-service-v01.md` | Model selection (Haiku 4.5 + Sonnet 4.6 + Voyage-3-large 1024d) + output schemas + retry semantics (Sprint A3). |
 | `architecture/prompts/` | 6 prompt template skeletons (classify + 5 bucket extracts); Sprint B2 fills production copy. |
+| `architecture/integration-plan-v01.md` | Where new concepts (Calc Explanation / Worker Context / Sentiment) plug into the existing pipeline (Sprint INTEG-001). Adds Sprint E design constraint. |
 
 ### ADRs
 
