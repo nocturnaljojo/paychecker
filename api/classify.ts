@@ -28,6 +28,13 @@ import { verifyToken } from '@clerk/backend'
 
 export const config = { runtime: 'nodejs' }
 
+// Vercel Hobby plan default function timeout is 10s, which is shorter than
+// typical Anthropic Vision response time (5-15s). Set to 60s (Hobby max).
+// Aligns with Sprint B1.10's Anthropic SDK timeout (30s × 1 retry = 60s
+// worst case) — POL-013 architectural convention: every external API
+// boundary needs explicit timeout.
+export const maxDuration = 60
+
 // ─────────────────────────────────────────────────────────────────
 // Constants — model name pinned exactly per extraction-service-v01.md.
 // No silent fallback. If Anthropic rejects the model the request fails;
