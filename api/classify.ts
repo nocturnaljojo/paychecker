@@ -392,11 +392,44 @@ function readEnv(): EnvOk | ClassifyError {
   return { anthropicApiKey, clerkSecretKey, supabaseUrl, supabaseServiceRoleKey }
 }
 
+/**
+ * Runtime-agnostic header accessor.
+ *
+ * In Vercel's Edge / Web runtime, `request.headers` is a `Headers` instance
+ * with `.get(name)`. In Vercel's Node runtime, `request.headers` is a plain
+ * object with lowercase keys (Node `IncomingMessage` convention). The
+ * TypeScript type for `Request` says it's a `Headers` instance, but the
+ * Node runtime shape diverges — `tsc` won't catch this, only runtime will.
+ *
+ * Closes ISS-012: production 500'd on `request.headers.get is not a function`
+ * because this file declares `runtime: 'nodejs'`. Future-proof against any
+ * runtime config change by handling both shapes here.
+ */
+function getHeader(request: Request, name: string): string | null {
+  const headers = request.headers as unknown
+  if (
+    headers &&
+    typeof headers === 'object' &&
+    'get' in headers &&
+    typeof (headers as { get?: unknown }).get === 'function'
+  ) {
+    return (headers as Headers).get(name)
+  }
+  if (headers && typeof headers === 'object') {
+    const value = (headers as Record<string, unknown>)[name.toLowerCase()]
+    if (typeof value === 'string') return value
+    if (Array.isArray(value) && value.length > 0 && typeof value[0] === 'string') {
+      return value[0]
+    }
+  }
+  return null
+}
+
 async function authenticate(
   request: Request,
   clerkSecretKey: string,
 ): Promise<{ clerkUserId: string } | ClassifyError> {
-  const header = request.headers.get('authorization') ?? request.headers.get('Authorization')
+  const header = getHeader(request, 'authorization')
   if (!header || !header.startsWith('Bearer ')) {
     return { error: 'Missing Authorization Bearer token' }
   }

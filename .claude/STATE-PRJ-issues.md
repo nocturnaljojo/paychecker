@@ -81,6 +81,24 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-012 — `api/classify.ts` 500s in production with `TypeError: request.headers.get is not a function`
+- **Severity:** P1
+- **Status:** FIXED
+- **Found:** 2026-04-30 by production smoke test from phone (post-VERCEL-MAX-DURATION push, the first time anyone successfully reached `/api/classify` on production)
+- **Phase:** 0 (load-bearing for SMOKE-001 production validation)
+- **Symptom:** POST `/api/classify` returns 500 in <1 second on production. Vercel function logs show:
+  ```
+  TypeError: request.headers.get is not a function
+    at authenticate (/vercel/path0/api/classify.ts:399:34)
+    at Object.handler (/vercel/path0/api/classify.ts:120:22)
+  ```
+  Zero `[classify]` log lines printed because the entry log at line 127 fires AFTER `authenticate()` (line 113), and authenticate throws before reaching it.
+- **Root cause:** `api/classify.ts:29` declares `export const config = { runtime: 'nodejs' }`. In Vercel's Node runtime, `request.headers` is a **plain JavaScript object** with lowercase keys (Node `IncomingMessage` convention) — NOT a Web Standard `Headers` instance. Line 399's `request.headers.get('authorization')` calls a method that only exists on `Headers` instances (Edge / Web runtime). Throws `TypeError` immediately. The TypeScript type for `Request` says the headers are a `Headers` instance, but Vercel's Node runtime shape diverges from the type — so `tsc` doesn't catch this, only runtime does.
+- **Pre-existing:** Yes — header-access pattern shipped in Sprint B2 (commit `27b5b1d`) when classify endpoint was first wired. Was masked by the upstream chain of bugs (ISS-005 → ISS-007 → ISS-008 → ISS-009 → ISS-010) plus the local Windows Norton/schannel SSL revocation issue (POL-014 candidate) that prevented anyone from reaching `authenticate()` end-to-end on either local or production until B1.10's diagnostic logs + VERCEL-MAX-DURATION's timeout fix unblocked the production path today.
+- **Fix (this sprint, B1.11):** Add a runtime-agnostic `getHeader(request, name)` helper next to `authenticate()`. It detects whether `request.headers` is a `Headers` instance (uses `.get(name)`) or a plain object (uses `headers[name.toLowerCase()]` with `Array.isArray` defence for headers that can be string[] in Node like `set-cookie`). Replace the failing `request.headers.get('authorization') ?? request.headers.get('Authorization')` line with a single `getHeader(request, 'authorization')` call (the helper normalises to lowercase internally, so the defensive double-lookup is unnecessary). Future-proof: works in both Node and Edge runtimes if anyone ever flips the runtime config.
+- **Pattern signal:** First production-validated bug of the day. Local Windows-Norton SSL issues prevented this from surfacing during local dev. The Vercel function logs (working from phone, on a clean network) immediately surfaced it. Lesson: production logs are sometimes the cheapest diagnostic surface, especially when local tooling is broken.
+- **Closed:** 2026-04-30 by Sprint B1.11 commit (see git log).
+
 ### ISS-010 — `api/classify.ts` hangs / 500s with no diagnostic surface
 - **Severity:** P1
 - **Status:** FIXED
