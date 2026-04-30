@@ -203,6 +203,23 @@
 - **Effort:** S (~15 min — split the conditional + add the throw + manual smoke).
 - **Dependencies:** B1.7 ships first. POL-010 is post-B1.7 polish; can bundle with POL-009 in the same hardening sprint.
 
+### POL-013 — Every external API boundary needs explicit timeout + diagnostic logs (project convention)
+- **Severity:** MED
+- **Source:** Codex adversarial review during Sprint B1.10 (ISS-010 diagnosis)
+- **Status:** PLANNED — convention; apply going forward
+- **Found:** 2026-04-30 by Jovi (Sprint B1.10)
+- **What:** Establish a project-wide convention. Every server-side function that calls an external API (Anthropic Vision, Anthropic Embeddings, Voyage, Stripe, future integrations) — and every server-side function that calls Supabase via service role for that matter — MUST include all four:
+  1. **Explicit timeout.** Never trust SDK defaults. Anthropic default is 10 min/attempt × 2 retries = 30 min worst case. Stripe and Supabase are similar. Set a sane bounded timeout per attempt (e.g. 30s for Vision, 10s for embedding, 5s for typical DB).
+  2. **`console.log` at major checkpoints.** Entry, before each external call, after each external call (with `Date.now()` timing), before each terminal `jsonResponse`. Privacy-safe: metadata + UUIDs only per `REF-PRIVACY-baseline.md` hard rule 1; never document content, never personal information beyond UUIDs.
+  3. **`console.error` BEFORE returning failure responses.** Don't swallow errors silently. The catch block must log the actual SDK error message before returning `{ status: 'failed', ... }` to the client. The operator's terminal is the first place a regression should surface, not the user's UI.
+  4. **Bounded `maxRetries`.** Default 2 is often too many for user-facing serverless. `maxRetries: 1` keeps the worst-case wall time predictable.
+- **Why:** ISS-010 surfaced this bug class. We lost 30+ minutes diagnosing a hang that, with 5 lines of `console.log`, would have been a 5-second diagnosis. Diagnostic gaps are their own defects — equal severity to silent hangs because they make EVERY future bug expensive to triage.
+- **Apply forward to:** every new `api/*` function (next: `api/extract.ts` per Sprint B3); any new MCP / SDK integration; any function that calls `supabase.storage.*` (no native timeout in supabase-js — POL-014 candidate to add a wrapper).
+- **Apply backward to:** `api/classify.ts` (B1.10 ships this — the convention's first instance). Sprint 7's `useEmploymentFact` and other fact-write paths can adopt selectively as polish.
+- **Effort per function:** ~5-10 min (timeout + logs + error log).
+- **Dependencies:** B1.10 ships first as the canonical example; this entry documents the convention going forward.
+- **Open question:** worth a follow-up wrapper module (`src/lib/external-call.ts`?) that enforces this contract via a higher-order function, vs trusting hand-application on each new function. Decide when the second `api/*` function lands (Sprint B3).
+
 ### POL-012 — Configure Clerk JWT template for proper Supabase third-party auth role mapping (Phase 1+)
 - **Severity:** LOW (defense-in-depth)
 - **Source:** Codex adversarial review during Sprint B1.9 (ISS-009 diagnosis)

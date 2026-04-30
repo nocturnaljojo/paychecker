@@ -124,6 +124,7 @@ export default async function handler(request: Request): Promise<Response> {
   if (!documentId || typeof documentId !== 'string') {
     return jsonResponse(400, { error: 'Missing document_id' })
   }
+  console.log(`[classify] entry document_id=${documentId} clerk_user_prefix=${auth.clerkUserId.slice(0, 8)}`)
 
   // Service-role Supabase client for all DB ops in this function.
   const supabase = createClient(env.supabaseUrl, env.supabaseServiceRoleKey, {
@@ -133,8 +134,10 @@ export default async function handler(request: Request): Promise<Response> {
   // Resolve clerk user → worker_id (verified server-side; never trust client body).
   const workerId = await resolveWorkerId(supabase, auth.clerkUserId)
   if (!workerId) {
+    console.error(`[classify] worker_not_found clerk_user_prefix=${auth.clerkUserId.slice(0, 8)}`)
     return jsonResponse(403, { error: 'Worker not found for verified user' })
   }
+  console.log(`[classify] worker_resolved worker_id=${workerId}`)
 
   // Consent gate (ISS-006 / R-010): refuse to send any document content to
   // Anthropic before consent_records exists for this worker. Service role
@@ -146,14 +149,17 @@ export default async function handler(request: Request): Promise<Response> {
     .eq('worker_id', workerId)
     .limit(1)
   if (consent.error) {
+    console.error(`[classify] consent_query_error worker_id=${workerId} message=${consent.error.message}`)
     return jsonResponse(500, { error: consent.error.message })
   }
   if ((consent.count ?? 0) === 0) {
+    console.log(`[classify] consent_required worker_id=${workerId}`)
     return jsonResponse(403, {
       error: 'consent_required',
       message: 'Privacy setup needs finishing first.',
     })
   }
+  console.log(`[classify] consent_ok worker_id=${workerId}`)
 
   // Load + ownership check.
   const docResult = await supabase
@@ -163,16 +169,20 @@ export default async function handler(request: Request): Promise<Response> {
     .eq('worker_id', workerId)
     .maybeSingle()
   if (docResult.error) {
+    console.error(`[classify] doc_query_error document_id=${documentId} message=${docResult.error.message}`)
     return jsonResponse(500, { error: docResult.error.message })
   }
   if (!docResult.data) {
+    console.error(`[classify] doc_not_found document_id=${documentId} worker_id=${workerId}`)
     return jsonResponse(404, { error: 'Document not found' })
   }
   const doc = docResult.data
+  console.log(`[classify] doc_loaded id=${doc.id} state=${doc.state} mime=${doc.mime_type}`)
 
   // Idempotency: only run from raw/classifying. Already-progressed docs
   // return their current outcome rather than re-classifying.
   if (doc.state !== 'raw' && doc.state !== 'classifying') {
+    console.log(`[classify] idempotent_replay document_id=${doc.id} state=${doc.state}`)
     const existing = await fetchExistingClassification(supabase, doc.id)
     return jsonResponse(200, existing ?? {
       status: 'failed',
@@ -210,21 +220,34 @@ export default async function handler(request: Request): Promise<Response> {
     .update({ state: 'classifying' })
     .eq('id', doc.id)
   if (stateUpdate.error) {
+    console.error(`[classify] state_update_error document_id=${doc.id} message=${stateUpdate.error.message}`)
     return jsonResponse(500, { error: stateUpdate.error.message })
   }
+  console.log(`[classify] state_set=classifying document_id=${doc.id}`)
 
   // Fetch the file bytes from storage. The 'documents' bucket is private;
   // service role can read directly without signed URLs.
   const fileBlob = await downloadDocumentBlob(supabase, doc.storage_path)
   if ('error' in fileBlob) {
+    console.error(`[classify] storage_download_error document_id=${doc.id} message=${fileBlob.error}`)
     return jsonResponse(500, fileBlob)
   }
 
   const base64 = await blobToBase64(fileBlob.blob)
+  console.log(`[classify] storage_downloaded bytes=${fileBlob.blob.size} base64_len=${base64.length}`)
 
   // Anthropic call with retry semantics per extraction-service-v01.md.
-  const anthropic = new Anthropic({ apiKey: env.anthropicApiKey })
+  // Timeout + maxRetries explicit per POL-013 (ISS-010 fix): SDK default is
+  // 600_000ms × 2 retries = 30min worst case. Bound to 30s × 1 retry = 60s.
+  const anthropic = new Anthropic({
+    apiKey: env.anthropicApiKey,
+    timeout: 30_000,
+    maxRetries: 1,
+  })
+  console.log(`[classify] anthropic_start mime=${mimeType} base64_len=${base64.length}`)
+  const t0 = Date.now()
   const classifyJson = await callClassifierWithRetry(anthropic, base64, mimeType)
+  console.log(`[classify] anthropic_end ms=${Date.now() - t0}`)
   if ('error' in classifyJson) {
     return await failClassification(
       supabase,
@@ -243,6 +266,7 @@ export default async function handler(request: Request): Promise<Response> {
       : confidence >= ROUTE_REVIEW_MIN
         ? 'review_pending'
         : 'failed'
+  console.log(`[classify] parsed detected_type=${detectedType} confidence=${confidence} routing=${routingStatus}`)
 
   const classificationInsert = await supabase
     .from('document_classifications')
@@ -257,9 +281,11 @@ export default async function handler(request: Request): Promise<Response> {
     .select('id')
     .single()
   if (classificationInsert.error) {
+    console.error(`[classify] classification_insert_error document_id=${doc.id} message=${classificationInsert.error.message}`)
     return jsonResponse(500, { error: classificationInsert.error.message })
   }
   const classificationId = classificationInsert.data.id as string
+  console.log(`[classify] inserted classification_id=${classificationId}`)
 
   // Failed routing — update state but don't move storage.
   if (routingStatus === 'failed') {
@@ -267,6 +293,7 @@ export default async function handler(request: Request): Promise<Response> {
       .from('documents')
       .update({ state: 'classified', doc_type: 'other' })
       .eq('id', doc.id)
+    console.log(`[classify] return status=failed document_id=${doc.id}`)
     return jsonResponse(200, {
       status: 'failed',
       document_id: doc.id,
@@ -283,6 +310,7 @@ export default async function handler(request: Request): Promise<Response> {
       .from('documents')
       .update({ state: 'classified', doc_type: docType })
       .eq('id', doc.id)
+    console.log(`[classify] return status=review_pending document_id=${doc.id} doc_type=${docType}`)
     return jsonResponse(200, {
       status: 'review_pending',
       document_id: doc.id,
@@ -301,10 +329,12 @@ export default async function handler(request: Request): Promise<Response> {
     if (moved.error) {
       // Storage move failed but classification succeeded. Mark routed=false
       // by leaving state at 'classified'; surface the issue.
+      console.error(`[classify] storage_move_error document_id=${doc.id} message=${moved.error.message}`)
       await supabase
         .from('documents')
         .update({ state: 'classified', doc_type: docType })
         .eq('id', doc.id)
+      console.log(`[classify] return status=review_pending (move_failed) document_id=${doc.id}`)
       return jsonResponse(200, {
         status: 'review_pending',
         document_id: doc.id,
@@ -319,6 +349,7 @@ export default async function handler(request: Request): Promise<Response> {
     .from('documents')
     .update({ state: 'routed', doc_type: docType, storage_path: newStoragePath })
     .eq('id', doc.id)
+  console.log(`[classify] return status=auto_routed document_id=${doc.id} doc_type=${docType}`)
 
   return jsonResponse(200, {
     status: 'auto_routed',
@@ -425,6 +456,7 @@ async function failClassification(
   workerMessage: string,
   reasonCode: string,
 ): Promise<Response> {
+  console.error(`[classify] fail document_id=${documentId} reason_code=${reasonCode}`)
   await supabase
     .from('document_classifications')
     .insert({
@@ -531,11 +563,14 @@ async function callClassifier(
 
     const parsed = extractJsonObject(text)
     if (!parsed) {
+      console.error(`[classify] anthropic_non_json strict=${strict}`)
       return { error: 'Classifier returned non-JSON output' }
     }
     return { json: parsed }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Anthropic API error' }
+    const msg = err instanceof Error ? err.message : 'Anthropic API error'
+    console.error(`[classify] anthropic_error strict=${strict} message=${msg}`)
+    return { error: msg }
   }
 }
 

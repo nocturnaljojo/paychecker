@@ -81,6 +81,24 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-010 — `api/classify.ts` hangs / 500s with no diagnostic surface
+- **Severity:** P1
+- **Status:** FIXED
+- **Found:** 2026-04-30 by SMOKE-001 attempt + Codex adversarial review (Sprint B1.10)
+- **Phase:** 0 (Sprint B1.10 target — load-bearing for SMOKE-001 completion)
+- **Symptom:** `/api/classify` runs for 30+ seconds. Vercel dev terminal shows only `"function still running after 30s"` warning. Eventually returns 500 to browser. ZERO console output from `api/classify.ts` (no `console.log` anywhere in the file). UI pill flips to "Couldn't read" with reason like `CLASSIFY FAILED (500)`. Hard refresh + retry produces identical result.
+- **Diagnostic gap:** Without any logs in the handler, we cannot tell where the hang/500 originated — could be at JWT verify, worker resolve, consent gate, document load, state update, storage download, Anthropic API, or response parsing. The hang has zero observable surface from the operator's terminal.
+- **Root cause (per Codex diagnosis):** Two simultaneous defects in `api/classify.ts`:
+  1. **No explicit timeout on Anthropic SDK.** `api/classify.ts:226` has `new Anthropic({ apiKey })` with SDK defaults: `timeout: 600_000ms` (10 min) per attempt × `maxRetries: 2` (default) = up to 30 minutes total wall time per request. Vercel dev's 30s warning fires but does not kill the function; the SDK keeps awaiting silently.
+  2. **Zero `console.log` statements in the handler.** The function file shipped in Sprint B2 (commit `27b5b1d`) without any instrumentation. Cannot diagnose any failure mode from terminal.
+- **Pre-existing:** Yes — both defects shipped together in Sprint B2's initial classify wiring. They were masked by the upstream chain of bugs (ISS-005 → ISS-007 → ISS-008 → ISS-009) that prevented any document from reaching `/api/classify` until B1.9 + Migration 0013 unblocked the storage path. ISS-010 is the next-deepest layer of latent hardening debt.
+- **Fix (this sprint, B1.10):** Two-part fix.
+  - **Part 1 — Bound the Anthropic boundary.** Constructor at `api/classify.ts:226` now passes `timeout: 30_000` (30s per attempt) and `maxRetries: 1` (one retry, not two). Worst-case wall time becomes 60s (2 attempts × 30s) vs the prior ~30 min default. On timeout, the SDK throws `AbortError`/timeout error; existing `callClassifier:518` try/catch surfaces it through `failClassification` to the client as a clean `'failed'` status with worker-readable reason.
+  - **Part 2 — Tactical diagnostics throughout the handler.** 15 `console.log` / `console.error` statements distributed across every major checkpoint: entry (after `document_id` validation), post-JWT, post-worker-resolve, post-consent, post-doc-load (with state + mime), post-state-update, post-storage-download (with size), Anthropic-start (with `Date.now()` capture), Anthropic-end (with elapsed-ms), parse result (detected_type + confidence), routing decision, classification INSERT, each terminal `jsonResponse(200)`, plus error logs in `callClassifier` catch and `failClassification`. Privacy-safe per `REF-PRIVACY-baseline.md` hard rule 1: UUIDs + metadata only, never document content; Clerk user_id truncated to first 8 chars in the auth log to limit noise.
+- **Today's 500 — what we DON'T yet know:** What actually caused today's 500 in the SMOKE-001 attempt. After B1.10 ships, the next attempt's terminal output will tell us in <5 seconds which step failed. Most likely: the rotated Clerk dev secret (SEC-001) means Anthropic key may also have been touched, OR the Anthropic API itself was slow, OR a regional flake. The point of B1.10 is that the next failure of any kind will be diagnosable, not silent.
+- **POL-013 captured:** every external API boundary going forward needs explicit timeout + diagnostic logs as a project convention. Diagnostic gap is its own defect.
+- **Closed:** 2026-04-30 by Sprint B1.10 commit (see git log).
+
 ### ISS-009 — Storage RLS denies all uploads (Clerk JWT vs `TO authenticated` role-scoping mismatch)
 - **Severity:** P1
 - **Status:** FIXED
