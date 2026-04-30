@@ -83,7 +83,7 @@
 
 ### ISS-009 — Storage RLS denies all uploads (Clerk JWT vs `TO authenticated` role-scoping mismatch)
 - **Severity:** P1
-- **Status:** WRITTEN — apply pending (Supabase MCP outage at sprint commit time; migration file ready for Studio paste or MCP retry)
+- **Status:** FIXED
 - **Found:** 2026-04-30 by SMOKE-001 attempt + dual Codex/Claude-Code adversarial review (Sprint B1.9)
 - **Phase:** 0 (Sprint B1.9 target — load-bearing for SMOKE-001)
 - **Symptom:** Click Choose Files, pick a fresh JPEG; pill flips `pending → uploading → failed` ("Couldn't read"); reason text reads `"new row violates row-level security policy"`; console shows `Failed to load resource: 400` on the `*.supabase.co/storage/v1/object/...` upload URL. Network log shows zero `documents` INSERT requests because uploadDocument's storage upload returned 400 first. DB queries confirm zero rows in `documents` and zero objects under the worker's prefix in either `documents` or `payslips` bucket.
@@ -94,8 +94,13 @@
 - **Fix (this sprint, B1.9):** New `supabase/migrations/0013_storage_rls_public_pattern.sql` drops the six `TO authenticated` storage policies and recreates them with no `TO` clause (PUBLIC) plus an explicit JWT-presence guard `(SELECT auth.jwt() ->> 'sub') IS NOT NULL`. Mirrors the `public.documents` pattern that already works for Clerk-JWT. Security model identical: anonymous requests fail the JWT guard; cross-tenant requests fail the `current_worker_id()` foldername check. Migration 0012's `(SELECT ...)` wrap precedent followed for planner-init-plan caching.
 - **Pattern signal:** Five sprints today (B1.5, B1.6, B1.7, B1.8, B1.9) all on the same upload pipeline; each one unmasked the next bug. ISS-009 was hidden by ISS-008 which was hidden by ISS-007 which was hidden by ISS-005. SMOKE-001 was the right next sprint to schedule but couldn't run because each unmasking surfaced fresh blockers. Lesson confirmed: **browser-smoke each sprint that touches a new pipeline stage**, even when lint+build pass.
 - **Defense-in-depth alternative:** POL-012 captures the "more correct" Supabase-native fix — configuring Clerk JWT to include a `role: 'authenticated'` claim via Clerk JWT template, which would let storage policies stay in their Supabase-default `TO authenticated` shape. Not urgent; Migration 0013 closes ISS-009 fully on its own.
-- **Drafted:** 2026-04-30 by Sprint B1.9 — `supabase/migrations/0013_storage_rls_public_pattern.sql` written + committed. Apply step blocked by transient Supabase MCP outage ("Authentication service is temporarily unavailable") at sprint commit time. Apply path: (a) Supabase Studio → SQL Editor → paste 0013 contents → Run; (b) retry `apply_migration` via MCP when service recovers; (c) Supabase CLI `supabase db push` if available locally.
-- **Closed:** _pending apply + verify_
+- **Drafted:** 2026-04-30 by Sprint B1.9 (commit `0a65d5b`) — `supabase/migrations/0013_storage_rls_public_pattern.sql` written + committed. Apply step initially blocked by transient Supabase MCP outage; MCP recovered; migration applied immediately after.
+- **Applied:** 2026-04-30 via Supabase MCP `apply_migration` (post-recovery, same sprint). Verified via 4 queries:
+  - All 6 storage policies (3 `documents_storage_*` + 3 `payslips_self_*`) now show `polroles: {PUBLIC}` (flipped from `{authenticated}` pre-apply).
+  - `pg_get_expr(polqual / polwithcheck)` confirms each policy now contains the three-clause guard: `bucket_id` match + `(SELECT auth.jwt() ->> 'sub') IS NOT NULL` + `foldername[1] = current_worker_id()::text`.
+  - `public.*` policies (workers, documents, consent_records) UNCHANGED — still `{PUBLIC}`, still bare `current_worker_id()`. Migration 0013 did not touch them.
+  - Performance advisor scan: no new lints introduced. The 8 `auth_rls_initplan` warnings are the pre-existing stale-cache entries from POL-002 (Migration 0012's policies rewritten correctly, advisor cache not yet refreshed); the `unused_index` lints are pre-existing per ISS-004. None caused by 0013.
+- **Closed:** 2026-04-30 by Sprint B1.9 (commit `0a65d5b` drafts the migration; apply + verify completed in the same sprint window).
 
 ### ISS-008 — `startUpload` setState-updater race causes silent stall at "Uploading..."
 - **Severity:** P1
