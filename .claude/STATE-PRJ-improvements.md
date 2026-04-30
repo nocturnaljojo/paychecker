@@ -203,6 +203,17 @@
 - **Effort:** S (~15 min — split the conditional + add the throw + manual smoke).
 - **Dependencies:** B1.7 ships first. POL-010 is post-B1.7 polish; can bundle with POL-009 in the same hardening sprint.
 
+### POL-012 — Configure Clerk JWT template for proper Supabase third-party auth role mapping (Phase 1+)
+- **Severity:** LOW (defense-in-depth)
+- **Source:** Codex adversarial review during Sprint B1.9 (ISS-009 diagnosis)
+- **Status:** PLANNED — Phase 1+ defense-in-depth alternative
+- **Found:** 2026-04-30 by Jovi (Sprint B1.9)
+- **What:** Configure a Clerk JWT template (or Session Token Customization) named `supabase` that adds a `role: 'authenticated'` claim to all session JWTs. Update `src/lib/supabase.ts:38` to call `getToken({ template: 'supabase' })` instead of vanilla `getToken()`. With the role claim present, Supabase Storage's role-assignment maps requests to `authenticated`, and `TO authenticated`-scoped policies (the Supabase-default pattern) apply correctly. This would let storage policies live in their Supabase-default shape if we ever rebuild from scratch.
+- **Why:** Migration 0013 (Sprint B1.9) ships the PUBLIC + JWT-presence-guard pattern as the immediate unblock. POL-012 is the Supabase-native alternative — same security properties, but aligned with Supabase's documented third-party auth pattern. Either works for security; POL-012 is the "more correct" of the two by Supabase's idiomatic design.
+- **Effort:** S (~30-45 min — Clerk dashboard config + `src/lib/supabase.ts` one-line change + verify role claim in JWT inspector + test that upload still works).
+- **Dependencies:** Clerk plan that supports JWT Templates or Session Token Customization. Worth checking whether the existing Clerk dev account already supports it; the original `Clerk + Supabase` integration shape (pre-2024) used exactly this pattern with a `supabase` JWT template.
+- **NOT urgent.** Migration 0013 closes ISS-009 fully on its own. POL-012 is "would be nicer if" rather than "needed to ship." Could ship in the same Phase 1 hardening sprint as POL-009 / POL-010 / POL-011 cleanup.
+
 ### POL-011 — Upload pipeline regression test suite (Phase 1+)
 - **Severity:** MED
 - **Source:** Codex adversarial review during Sprint B1.8 (ISS-008 diagnosis)
