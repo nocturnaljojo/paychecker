@@ -111,7 +111,12 @@ type AnthropicClassifyJson = {
 // Handler
 // ─────────────────────────────────────────────────────────────────
 
-export default async function handler(request: Request): Promise<Response> {
+async function handler(request: Request): Promise<Response> {
+  // Sentinel log (B1.12): fires before ANY await, so we can prove the
+  // entrypoint runs even if downstream code hangs. Privacy-safe — method
+  // and url only, no headers, no body.
+  console.log(`[classify] handler_called method=${request.method} url=${request.url}`)
+
   if (request.method !== 'POST') {
     return jsonResponse(405, { error: 'Method not allowed' })
   }
@@ -730,3 +735,29 @@ function jsonResponse(status: number, body: unknown): Response {
     headers: { 'content-type': 'application/json' },
   })
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Vercel Web handler entrypoint (modern fetch-object pattern).
+//
+// Closes ISS-014: previously used `export default async function handler`,
+// a hybrid shape that matches no documented Vercel Functions pattern
+// for non-Next.js projects. Vercel's runtime dispatched it through the
+// legacy `(req, res)` adapter (because of the `default function`
+// declaration shape), which wraps `req` as a Node IncomingMessage-like
+// object with NO `.json()` method. So `await request.json()` at line 126
+// awaited a non-method and hung indefinitely until `maxDuration` killed
+// the function — exactly the 300s 504 + no-`[classify]`-logs symptom we
+// saw on the B1.11 deployment.
+//
+// The fetch-object pattern (`export default { async fetch(request) }`)
+// is the documented Web API entrypoint for non-Next.js Vercel Functions.
+// Vercel's runtime detects the `fetch` method and routes through the
+// modern Web dispatcher, where `request.json()` works as expected.
+//
+// Implementation: keep `handler` as a named function above (avoids
+// re-indenting the 258-line body); export an object that delegates
+// `fetch` to it. Functionally equivalent to wrapping the handler body
+// directly in the object literal.
+// ─────────────────────────────────────────────────────────────────
+
+export default { fetch: handler }
