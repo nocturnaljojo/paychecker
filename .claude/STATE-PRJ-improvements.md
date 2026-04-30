@@ -203,6 +203,73 @@
 - **Effort:** S (~15 min — split the conditional + add the throw + manual smoke).
 - **Dependencies:** B1.7 ships first. POL-010 is post-B1.7 polish; can bundle with POL-009 in the same hardening sprint.
 
+### POL-018 — Production-first validation discipline when local dev tooling is broken
+- **Severity:** MED
+- **Source:** RETRO-001 (2026-04-30 retrospective)
+- **Status:** PROPOSED — convention worth ratifying
+- **Found:** 2026-04-30
+- **What:** When local dev tooling has pathological failure modes that resist a 30-minute fix attempt, escalate to production smoke + production logs as the authoritative diagnostic surface, rather than continuing to debug locally. Today's pivot from local Windows + Norton/schannel SSL revocation + vercel dev stdout-capture issues to production deployment + Vercel MCP logs was the breakthrough that surfaced ISS-012, ISS-013, and ISS-014 — three structural bugs that local would not have surfaced (or would have surfaced much later).
+- **Why:** Local dev tooling is meant to be the cheapest diagnostic loop. When it breaks (network filtering by AV, OS-level CLI quirks, IDE/shell issues), the cheap loop becomes infinitely expensive. Production deploys, by contrast, run on Vercel's well-trodden infrastructure with reliable log capture and authoritative environment. Time-boxing local debugging at 30 minutes (or one sprint cap) before pivoting is a defensive workflow rule.
+- **When to apply:** local dev returning sustained errors not explained by code (e.g., POST hangs without function executing, log capture broken, env var loading flakey, tool MCP unavailable for >30 min). Push the WIP commit through CI, deploy to a preview environment, smoke-test from a clean device on a clean network. Vercel MCP `get_runtime_logs` + `get_deployment` then become the authoritative surface for the rest of the debug cycle.
+- **Operational caveat:** does NOT apply to production-only branches. Use Vercel preview deployments (`vercel --target preview`) when the bug is data-shape sensitive.
+- **Effort:** zero — workflow rule, not code.
+- **Dependencies:** Vercel MCP available + production deployment infrastructure healthy (today: yes).
+
+### POL-017 — Vercel Functions entrypoint contracts as a structural defect class (Phase 1+)
+- **Severity:** MED
+- **Source:** Codex adversarial review during ISS-014 / DIAG-008
+- **Status:** PLANNED — Phase 1+ build-time lint or runtime contract assertion
+- **Found:** 2026-04-30 by Codex review of DIAG-008
+- **What:** ISS-014 (hybrid entrypoint shape causing 300s hang at `request.json()`) is the second instance today (after ISS-013, `maxDuration` ignored when standalone) of a defect class where Vercel's runtime SILENTLY IGNORES or PATHOLOGICALLY ROUTES code that doesn't match documented entrypoint or config patterns precisely. The codebase has no defence against this defect class — TypeScript types accept the code, ESLint accepts the code, the build compiles clean. Only production runtime surfaces the mismatch.
+- **Defect class members observed today:**
+  1. ISS-013 — `export const maxDuration = 60` standalone is silently ignored for non-Next.js functions; must live in `config` object.
+  2. ISS-014 — `export default async function handler(request: Request): Promise<Response>` is a hybrid that routes through legacy `(req, res)` adapter where `request.json()` doesn't exist on the wrapped req object.
+  3. (Latent) — `export const config = { runtime: 'edge' }` would silently swap runtime semantics with no compile-time signal.
+- **Fix shape:** build-time lint (custom ESLint rule OR `scripts/check-vercel-functions.ts` running in CI) that asserts each `api/*.ts` file matches one of Vercel's documented entrypoint shapes for the declared runtime, AND that `config.maxDuration` lives in the config object (not standalone), AND that `runtime` is one of the documented values. Alternative: a thin `defineFunction({ handler })` wrapper with type signatures that prevent the hybrid shape from being expressible.
+- **Effort:** S–M (~60 min for a custom ESLint rule + one type wrapper, OR ~30 min for a CI script that grep-asserts the patterns).
+- **Dependencies:** none.
+- **Apply forward to:** `api/extract.ts` (Sprint B3), any future `api/*` function. The `defineFunction` wrapper would also document the project's stance on runtime / shape.
+
+### POL-016 — Build-time lint for Vercel Functions config shape (subsumed by POL-017)
+- **Severity:** LOW
+- **Source:** Sprint VERCEL-MAX-DURATION-FIX (today)
+- **Status:** SUBSUMED by POL-017 — the build-time lint covers config (maxDuration shape), entrypoint shape, and runtime declaration in a single mechanism. Keeping this entry as a placeholder so the original VERCEL-MAX-DURATION-FIX daily-log reference stays discoverable.
+
+### POL-015 — Local Windows + Vercel CLI dev tooling fragility (operational)
+- **Severity:** MED (workflow blocker)
+- **Source:** RETRO-001 (today's chain of local-dev failures)
+- **Status:** OPEN — operational concern, not a code bug
+- **Found:** 2026-04-30 across multiple sprints
+- **What:** Today's local dev was sustainedly blocked by two distinct Windows-specific issues that prevented `/api/classify` from being exercised end-to-end on the developer's machine:
+  1. **Norton/schannel SSL revocation checks** intermittently blocked outbound HTTPS requests, including Anthropic API and Supabase connections, with no clear error surface — appeared as silent hangs at the SDK level. Confirmed not a code issue because the same code worked on production Vercel infrastructure.
+  2. **`vercel dev` stdout capture appears unreliable on Windows + Vercel CLI 48.10.14** — `console.log` output from serverless functions did not surface in the terminal during multiple test cycles, even when functions executed successfully. This is the diagnostic-gap symptom DIAG-008 surfaced. Production logs (via Vercel MCP `get_runtime_logs`) work reliably; local dev logs flake.
+- **Why this matters:** local dev is the cheapest diagnostic loop, and when it breaks, the team falls back to production-first validation (POL-018). Today's day cost was significant — without the local-tool pathology, several sprints could have cycled in 60s instead of waiting on production redeploys.
+- **Mitigations:**
+  1. Document the Windows + Norton + Vercel CLI combination in `tasks/lessons.md` so future sessions don't repeat the diagnostic chain.
+  2. Consider adding a Linux WSL2 dev path as fallback. Most Vercel runtime quirks affect Windows specifically; WSL2 often resolves them.
+  3. Track upstream: Vercel CLI release notes + known-issues for stdout-capture fixes. Upgrade when fixed.
+  4. POL-018 (production-first validation) is the workflow workaround; POL-015 captures the underlying operational debt.
+- **Effort:** S (documentation only) — M (WSL2 dev environment setup, ~half day for full migration including Supabase MCP, Clerk dev account, and `.env.local`).
+- **Dependencies:** none for documentation; WSL2 setup independent.
+
+### POL-014 — Extend POL-013 to Supabase + Clerk SDK call boundaries (Phase 1)
+- **Severity:** MED
+- **Source:** RETRO-001 + ISS-010 / ISS-014 follow-on analysis
+- **Status:** PLANNED — Phase 1 hardening
+- **Found:** 2026-04-30 by RETRO-001 analysis of latent timeouts
+- **What:** POL-013 says every external API boundary needs explicit timeout + diagnostic logs. ISS-010 closed it for Anthropic. ISS-013 + VERCEL-MAX-DURATION-FIX closed the Vercel-runtime side. **Two remaining external boundary classes in `api/classify.ts` still have NO explicit timeout:**
+  1. **Supabase storage download** (`supabase.storage.from('documents').download(storagePath)` at `api/classify.ts` ~line 218). `supabase-js` has no native client-level timeout for storage operations. A flaky network or stalled byte stream can hang up to the function ceiling.
+  2. **Clerk `verifyToken` JWKS fetch** (inside `authenticate` at `api/classify.ts` ~line 444). The `@clerk/backend` SDK's `verifyToken` does an internal JWKS fetch on first invocation; no `timeout` option is exposed in the SDK call as currently written. If Clerk's JWKS endpoint is slow / unreachable from the Vercel region, verifyToken waits indefinitely.
+  3. **All other Supabase REST calls** (`workers` SELECT, `consent_records` SELECT, `documents` SELECT/UPDATE, `document_classifications` INSERT) — same lack of native timeout in `supabase-js`.
+- **Why latent:** today's success path classified Contract2.jpeg in <30s, well within the 60s function cap. So no Supabase / Clerk timeout has manifested as a user-visible failure YET. But the defect class is identical to ISS-010: an external boundary with no explicit timeout will eventually hang, especially under regional / network anomalies.
+- **Fix shape:**
+  - **Supabase calls:** wrap with `Promise.race([supabaseCall, timeoutPromise(5000)])` or use `AbortController` (supabase-js v2.45+ supports `signal` per-call). Bound each DB query to ~5s, each storage download to ~10s.
+  - **Clerk verifyToken:** wrap similarly, OR open an issue with Clerk to add a `timeout` option to `verifyToken({ secretKey, timeout })`. ~3-5s wrap is reasonable.
+  - **Project-wide pattern:** consider a small `withTimeout(promise, ms)` utility in `api/_utils.ts` so the convention is uniform.
+- **Effort:** S (~60-90 min for `withTimeout` utility + apply to ~6 call sites in `api/classify.ts` + add timing logs per POL-013).
+- **Dependencies:** B1.12 ships first (entrypoint contract clean); ideally bundle into Sprint B3's `api/extract.ts` work.
+- **Apply forward to:** `api/extract.ts` and any future `api/*` function from day 1.
+
 ### POL-013 — Every external API boundary needs explicit timeout + diagnostic logs (project convention)
 - **Severity:** MED
 - **Source:** Codex adversarial review during Sprint B1.10 (ISS-010 diagnosis)
