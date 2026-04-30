@@ -26,14 +26,18 @@ import Anthropic from '@anthropic-ai/sdk'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { verifyToken } from '@clerk/backend'
 
-export const config = { runtime: 'nodejs' }
-
-// Vercel Hobby plan default function timeout is 10s, which is shorter than
-// typical Anthropic Vision response time (5-15s). Set to 60s (Hobby max).
-// Aligns with Sprint B1.10's Anthropic SDK timeout (30s × 1 retry = 60s
-// worst case) — POL-013 architectural convention: every external API
-// boundary needs explicit timeout.
-export const maxDuration = 60
+// Vercel function configuration.
+// - runtime: 'nodejs' for full Node API access (Anthropic SDK, Clerk, Supabase service-role).
+// - maxDuration: 60 (Hobby plan ceiling; aligns with Sprint B1.10's Anthropic SDK
+//   30s × 1 retry = 60s worst case so wall + SDK timeouts cap together).
+// POL-013: every external API boundary needs explicit timeout + diagnostic logs.
+// ISS-013 (Sprint VERCEL-MAX-DURATION-FIX): maxDuration must live INSIDE the
+// `config` object for non-Next.js Vercel Functions (Vite + api/*.ts). The
+// standalone `export const maxDuration` shape used in Sprint VERCEL-MAX-DURATION
+// (commit 0bfcba0) is supported only by Next.js Route Handlers; pure Vercel
+// Functions silently ignore it, which is why production was running for the
+// plan default of 300s instead of 60s before this fix.
+export const config = { runtime: 'nodejs', maxDuration: 60 }
 
 // ─────────────────────────────────────────────────────────────────
 // Constants — model name pinned exactly per extraction-service-v01.md.
