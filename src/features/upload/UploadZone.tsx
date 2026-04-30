@@ -61,24 +61,35 @@ export function UploadZone() {
   const onPickFiles = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
       const files = Array.from(e.target.files ?? [])
-      if (files.length === 0) return
-      addFiles(files)
-      void startUpload()
       e.target.value = ''
+      if (files.length === 0) return
+
+      const { workerId, isResolvingWorker, workerError } = uploadState
+      if (isResolvingWorker || workerError || !workerId) return
+
+      const { entries, batchId } = addFiles(files)
+      if (entries.length === 0) return
+      void startUpload(entries, workerId, batchId)
     },
-    [addFiles, startUpload],
+    [uploadState, addFiles, startUpload],
   )
 
   const onDrop = useCallback(
     (e: DragEvent<HTMLDivElement>) => {
       e.preventDefault()
       setIsDragging(false)
+
+      const { workerId, isResolvingWorker, workerError } = uploadState
+      if (isResolvingWorker || workerError || !workerId) return
+
       const files = Array.from(e.dataTransfer.files ?? [])
       if (files.length === 0) return
-      addFiles(files)
-      void startUpload()
+
+      const { entries, batchId } = addFiles(files)
+      if (entries.length === 0) return
+      void startUpload(entries, workerId, batchId)
     },
-    [addFiles, startUpload],
+    [uploadState, addFiles, startUpload],
   )
 
   const onDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {

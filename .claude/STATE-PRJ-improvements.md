@@ -180,7 +180,8 @@
 ### POL-009 — `useUploadBatch` two-parallel-sources-of-truth refactor (Phase 1+)
 - **Severity:** MED
 - **Source:** Codex adversarial review during Sprint B1.7
-- **Status:** PLANNED — Phase 1+ hardening
+- **Status:** IMPLEMENTED — Sprint B1.8 (brought forward from Phase 1+)
+- **Implemented:** 2026-04-30 by Sprint B1.8 — refactored `useUploadBatch` to explicit-parameter passing per option (a). `workerIdRef` and `batchIdRef` both eliminated; `addFiles` now returns `{ entries, batchId }` synchronously; `startUpload` takes explicit `(entries, workerId, batchId)` parameters. All setState calls use pure functional updaters with no closure side effects. Closes ISS-007 + ISS-008 simultaneously and prevents the next instance of this anti-pattern.
 - **Found:** 2026-04-30 by Codex adversarial review (root-cause investigation that surfaced ISS-007)
 - **What:** `src/features/upload/useUploadBatch.ts` currently maintains two parallel sources of truth: `state.workerId` mirrored by `workerIdRef.current`, and `state.batchId` mirrored by `batchIdRef.current`. They must be kept in lock-step manually with zero compiler enforcement and zero tests. ISS-007 was exactly the failure mode this pattern predicts — a writer forgot to keep the ref in sync with state, and the bug only surfaced on the first browser smoke. Refactor to one of:
   - **(a)** Pass `workerId`/`batchId` as explicit parameters to `startUpload(workerId, batchId, files)`. Drop the refs entirely. The caller (`UploadZone`) reads from `uploadState`. Stale closures become caller-visible: if React hasn't flushed yet, the values aren't there, the click cycle waits one render. No refs, no shadow state, no race.
@@ -192,7 +193,8 @@
 ### POL-010 — Distinguish worker-null vs batch-null in `startUpload` loud-fail branch
 - **Severity:** LOW
 - **Source:** Codex adversarial review during Sprint B1.7
-- **Status:** PLANNED — minor copy + invariant assertion
+- **Status:** IMPLEMENTED — Sprint B1.8 (closed by removal)
+- **Implemented:** 2026-04-30 by Sprint B1.8 — the loud-fail branch (B1.5's `if (!workerId || !batchId) { ... 'Account not ready' ... }`) was removed entirely. Explicit-parameter passing in the refactored `startUpload` makes those null states unreachable from any caller path: `UploadZone`'s handlers gate on `state.workerId` before calling, and `addFiles` always returns a non-null `batchId`. Distinguishing the two cases is moot when neither is reachable. The defense-in-depth this branch was meant to provide is replaced by structural impossibility (TypeScript signature requires non-nullable `workerId: string` and `batchId: string`).
 - **Found:** 2026-04-30 by Codex adversarial review
 - **What:** B1.5's loud-fail branch at `useUploadBatch.ts:125-139` fires for ANY null read of either ref, conflating two distinct failure modes. After B1.7, batch-null should be impossible by invariant (the ref is set synchronously before `startUpload` reads it). POL-010: split the branch into two distinct paths:
   - `if (!workerId) → 'Account not ready — try refreshing.'` (real auth issue; user-facing copy stays as is)
@@ -200,6 +202,21 @@
 - **Why:** Misleading copy is what made ISS-007 hard to diagnose — the network tab said "worker resolved" but the UI said "Account not ready". Different failure modes deserve different handling. Crashing on the impossible case turns the next regression into a fast obvious failure rather than a slow surface-level smoke.
 - **Effort:** S (~15 min — split the conditional + add the throw + manual smoke).
 - **Dependencies:** B1.7 ships first. POL-010 is post-B1.7 polish; can bundle with POL-009 in the same hardening sprint.
+
+### POL-011 — Upload pipeline regression test suite (Phase 1+)
+- **Severity:** MED
+- **Source:** Codex adversarial review during Sprint B1.8 (ISS-008 diagnosis)
+- **Status:** PLANNED — Phase 1+ once test infrastructure exists
+- **Found:** 2026-04-30 by Jovi (Sprint B1.8)
+- **What:** Add a smoke test that asserts a selected JPEG flowing through `useUploadBatch` produces an actual `uploadDocument()` call (not just a status pill flip to `'uploading'`). Catches future state-machine regressions in the upload hook automatically.
+- **Why:** Three bugs (ISS-005 silent hang, ISS-007 first-click race, ISS-008 silent stall) in 24 hours all in `useUploadBatch`. All three would have been caught by a single integration test that asserted "given selected files + resolved worker, `uploadDocument` is invoked at least once." Manual browser smoke is expensive and only catches regressions when somebody happens to look; a test runs in milliseconds and catches them on every commit.
+- **Effort:** M (~90 min — vitest + jsdom + `@testing-library/react` + Supabase client mock + the test itself).
+- **Dependencies:** Test infrastructure decision (vitest vs jest); Phase 0 has none currently. ADR-018 candidate worth ratifying when scheduled.
+- **Pattern note:** This would be the FIRST regression test in PayChecker. Defer until test framework ratified via ADR.
+- **What this would have caught:**
+  - ISS-005: would fail (worker resolution failure → upload hangs at "Waiting" → no uploadDocument call)
+  - ISS-007: would fail (first click → loud-fail branch → no uploadDocument call)
+  - ISS-008: would fail (uploading pill but no uploadDocument call — the assertion target)
 
 ### POL-008 — RLS-level consent enforcement on `documents` INSERT (Phase 1)
 - **Severity:** MED

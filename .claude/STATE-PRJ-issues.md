@@ -81,6 +81,20 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-008 — `startUpload` setState-updater race causes silent stall at "Uploading..."
+- **Severity:** P1
+- **Status:** FIXED
+- **Found:** 2026-04-30 by browser smoke test post-B1.7 + dual Codex/Claude-Code adversarial review
+- **Phase:** 0 (Sprint B1.8 target — load-bearing for SMOKE-001)
+- **Symptom:** After B1.7 closed first-click loud-fail, files transition `pending → "Uploading..."` but stay there indefinitely. Network tab shows zero storage POSTs, zero `documents` INSERT, zero `/api/classify` calls. No console errors. `documents` table query returns zero rows for the worker. Pill never progresses to Uploaded → Reading → Saved.
+- **Repro:** Sign in with onboarded worker (consent_records exists). Navigate to /upload. Click Choose Files. Pick any file (e.g. 155 KB JPEG). Pill flips to "Uploading..." and stays there for 30+ seconds. Hard refresh + retry produces identical failure.
+- **Root cause:** `src/features/upload/useUploadBatch.ts:142-153` — `pending` array mutated INSIDE the `setState((prev) => { ... })` updater (line 145: `pending = prev.files.filter(...)`). React 18 batches functional setState updaters; the updater (and its side-effect assignment to the closure-captured `pending`) runs deferred during the next render commit. The synchronous `if (pending.length === 0) return` at line 153 reads `pending` immediately after the setState call — sees the initial empty array — hits the early return — exits before the worker pool spawns. `processWorker` never runs; `uploadDocument` never called; no storage upload, no `documents` INSERT, no `/api/classify`. The setState updater eventually runs during render commit and DOES flip files to `'uploading'` (which is what the user sees), but by then `startUpload` has already returned.
+- **Same anti-pattern as ISS-007** (different function, same hook). Codex flagged the structural issue during the ISS-007 review — POL-009 captured the refactor recommendation. We deferred. Bug surfaced 5 hours later when B1.7's narrow fix unmasked this one.
+- **Pre-existing:** Yes — present since Sprint B1's initial commit (`1d05e08`). Was masked by ISS-007's loud-fail branch firing first; B1.7 unmasked it.
+- **Fix (this sprint, B1.8):** Refactor `useUploadBatch` to eliminate the refs-mirroring-state pattern entirely (the structural smell that produced both ISS-007 and ISS-008). `addFiles` now returns `{ entries, batchId }` synchronously; `startUpload` takes explicit `(entries, workerId, batchId)` parameters; no refs; no side-effect-in-setState-updater patterns. Drop-zone gating brought into symmetry with button gating. B1.5's loud-fail branch removed — explicit parameters make the impossible state actually impossible (POL-010 closed by removal).
+- **Pattern signal:** Three bugs (ISS-005 silent hang, ISS-007 first-click race, ISS-008 silent stall) in `useUploadBatch` in 24 hours, all in the same anti-pattern family. Codex flagged the structural issue during ISS-007 review (POL-009). We deferred. Bill came due in 5 hours. **Lesson:** when an external review flags a structural pattern, schedule the fix immediately, not "later." POL-009 + POL-010 now landed in the same sprint as ISS-008's closure.
+- **Closed:** 2026-04-30 by Sprint B1.8 commit (see git log).
+
 ### ISS-007 — `addFiles` setState-updater race causes deterministic first-click failure
 - **Severity:** P1
 - **Status:** FIXED
