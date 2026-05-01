@@ -7,7 +7,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Camera, FileText, Image as ImageIcon, Upload as UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
@@ -19,6 +19,9 @@ import {
   formatDocTypeLabel,
   type CaseEntry,
 } from './useCaseFeedback'
+import { OverrideModal } from './OverrideModal'
+import { completionStatusLabel, docTypeLabel } from '@/features/cases/vocabulary'
+import { useSupabaseClient } from '@/lib/supabase'
 
 const ACCEPT_ATTR = ACCEPTED_MIME_TYPES.join(',')
 
@@ -31,11 +34,20 @@ type CombinedStatus =
 
 export function UploadZone() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const supabase = useSupabaseClient()
   const { state: uploadState, addFiles, startUpload } = useUploadBatch()
   const { entries: classifyEntries, classifyBatch } = useClassifyBatch()
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const cameraInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Sprint M0.5-BUILD-03: when the worker arrives via /upload?case=X
+  // (from a CaseCard's "+ Add more pages" link), we attach freshly
+  // uploaded documents to that existing case instead of creating a new
+  // one. extendingCaseId is read here (early) because the classify-chain
+  // useEffect below needs to thread it into classifyBatch().
+  const extendingCaseId = searchParams.get('case')
 
   // Track which documentIds have already been queued for classify so the
   // chain effect doesn't re-trigger a fetch on every render.
@@ -43,7 +55,9 @@ export function UploadZone() {
 
   // Chain: when an upload reaches 'uploaded' status, queue its document_id
   // for classification. Duplicates get queued too — the API will return the
-  // existing classification idempotently.
+  // existing classification idempotently. When the worker arrived via
+  // /upload?case=X (extending an existing case), the case_id rides along
+  // so api/classify.ts can take the extend path.
   useEffect(() => {
     const fresh: string[] = []
     for (const f of uploadState.files) {
@@ -59,9 +73,9 @@ export function UploadZone() {
       fresh.push(docId)
     }
     if (fresh.length > 0) {
-      void classifyBatch(fresh)
+      void classifyBatch(fresh, extendingCaseId ?? undefined)
     }
-  }, [uploadState.files, classifyBatch])
+  }, [uploadState.files, classifyBatch, extendingCaseId])
 
   const onPickFiles = useCallback(
     (e: ChangeEvent<HTMLInputElement>) => {
@@ -155,7 +169,88 @@ export function UploadZone() {
     return ids
   }, [uploadState.files, classifyEntries])
 
-  const { cases, readyCount, confirmCase } = useCaseFeedback(settledDocumentIds)
+  const { cases, readyCount, confirmCase, updateCaseLabel } =
+    useCaseFeedback(settledDocumentIds)
+
+  // Owning state for the visual anchor + page-count surface — both
+  // refetch on mount and on caseId change (no caching).
+  const [extendingCase, setExtendingCase] = useState<
+    { docType: string | null; pageCount: number } | null
+  >(null)
+
+  // Per ChatGPT Round 2 finding 3: anchor refreshes on every mount —
+  // no caching. If the worker overrode the case's label between visits,
+  // the anchor must reflect the CURRENT case_type, not a stale snapshot.
+  useEffect(() => {
+    if (!extendingCaseId) {
+      setExtendingCase(null)
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      const caseRow = await supabase
+        .from('document_cases')
+        .select('doc_type')
+        .eq('case_id', extendingCaseId)
+        .maybeSingle()
+      if (cancelled || caseRow.error || !caseRow.data) {
+        setExtendingCase(null)
+        return
+      }
+      const countRow = await supabase
+        .from('documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('case_id', extendingCaseId)
+      if (cancelled) return
+      setExtendingCase({
+        docType: caseRow.data.doc_type as string | null,
+        pageCount: countRow.count ?? 0,
+      })
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [extendingCaseId, supabase])
+
+  // After the extend-classify completes for a fresh upload, refresh
+  // the page count so "Page added! Your X now has N pages" reads the
+  // post-link count from the DB (per ChatGPT Round 2 finding 2 — never
+  // local state). settledDocumentIds changes when classify finishes.
+  const settledKey = settledDocumentIds.join(',')
+  useEffect(() => {
+    if (!extendingCaseId || !settledKey) return
+    let cancelled = false
+    void (async () => {
+      const countRow = await supabase
+        .from('documents')
+        .select('id', { count: 'exact', head: true })
+        .eq('case_id', extendingCaseId)
+      if (cancelled) return
+      setExtendingCase((prev) =>
+        prev ? { ...prev, pageCount: countRow.count ?? prev.pageCount } : prev,
+      )
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [extendingCaseId, supabase, settledKey])
+
+  const pageCountByCase = useMemo<Record<string, number>>(() => {
+    if (extendingCaseId && extendingCase) {
+      return { [extendingCaseId]: extendingCase.pageCount }
+    }
+    return {}
+  }, [extendingCaseId, extendingCase])
+
+  const handleAddMorePages = useCallback(
+    (caseId: string) => {
+      navigate(`/upload?case=${caseId}`)
+      // Also reset the local upload batch so the next photo starts fresh.
+      // useUploadBatch handles this internally per FileEntry; navigation
+      // alone is enough to update searchParams + trigger the anchor.
+    },
+    [navigate],
+  )
 
   return (
     <main className="flex min-h-screen flex-col bg-pc-bg text-pc-text">
@@ -177,6 +272,13 @@ export function UploadZone() {
       </header>
 
       <div className="flex-1 px-5 pb-8 pt-6">
+        {extendingCaseId && (
+          <VisualAnchor
+            docType={extendingCase?.docType ?? null}
+            isLoading={extendingCase === null}
+          />
+        )}
+
         {consentRequiredCount > 0 && (
           <div
             role="alert"
@@ -311,7 +413,12 @@ export function UploadZone() {
           <CaseFeedbackPanel
             cases={cases}
             readyCount={readyCount}
+            pageCountByCase={pageCountByCase}
+            isExtending={!!extendingCaseId}
+            extendingDocType={extendingCase?.docType ?? null}
             onConfirm={confirmCase}
+            onChange={updateCaseLabel}
+            onAddMorePages={handleAddMorePages}
             onContinue={() => navigate('/dashboard')}
           />
         )}
@@ -517,6 +624,45 @@ function formatSize(bytes: number): string {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// VisualAnchor — Sprint M0.5-BUILD-03.
+//
+// Per ChatGPT critique 2026-05-01 Round 1 finding 3, when the worker
+// arrives at /upload?case=X they need a persistent on-screen reminder
+// of WHICH case they're extending. Mobile workers context-switch
+// (notifications, lock-screen, returning to the tab) and the URL bar
+// is hidden — the anchor card carries that context visually.
+//
+// Per Round 2 finding 3, the anchor MUST reflect the CURRENT case
+// doc_type, not a stale value. The owning component refetches the
+// case data on every mount; this component just renders what's passed.
+// ─────────────────────────────────────────────────────────────────
+
+function VisualAnchor({
+  docType,
+  isLoading,
+}: {
+  docType: string | null
+  isLoading: boolean
+}) {
+  const label = docType ? docTypeLabel(docType) : 'Adding more pages'
+  return (
+    <div className="mb-4 flex items-center gap-3 rounded-2xl border border-pc-border bg-pc-sage-soft px-4 py-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white text-pc-sage">
+        <FileText size={20} strokeWidth={1.75} />
+      </div>
+      <div className="min-w-0">
+        <div className="text-pc-body font-semibold text-pc-text">
+          {isLoading ? '…' : label}
+        </div>
+        <div className="text-pc-caption text-pc-text-muted">
+          Adding another page
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
 // CaseFeedbackPanel — Sprint M0.5-BUILD-01.
 //
 // First user-visible product moment after ADR-014 ratification: replaces
@@ -532,14 +678,51 @@ function formatSize(bytes: number): string {
 function CaseFeedbackPanel({
   cases,
   readyCount,
+  pageCountByCase,
+  isExtending,
+  extendingDocType,
   onConfirm,
+  onChange,
+  onAddMorePages,
   onContinue,
 }: {
   cases: CaseEntry[]
   readyCount: number
+  pageCountByCase: Record<string, number>
+  isExtending: boolean
+  extendingDocType: string | null
   onConfirm: (caseId: string) => Promise<boolean>
+  onChange: (caseId: string, newDocType: string) => Promise<boolean>
+  onAddMorePages: (caseId: string) => void
   onContinue: () => void
 }) {
+  // Sprint M0.5-BUILD-03: when the worker arrived via /upload?case=X,
+  // the panel speaks a different sentence. "Page added!" + the existing
+  // case type, never "Looks like X" — the classifier doesn't get a vote
+  // here.
+  if (isExtending && cases.length > 0) {
+    const existing = cases[0]
+    const pages = pageCountByCase[existing.caseId] ?? 1
+    const typeLabel = docTypeLabel(extendingDocType ?? existing.docType)
+    return (
+      <section className="mt-6 flex flex-col gap-3">
+        <div className="rounded-2xl border border-pc-border bg-pc-sage-soft p-4">
+          <div className="text-pc-body font-medium text-pc-text">
+            ✔ Page added!
+          </div>
+          <p className="mt-1 text-pc-caption text-pc-text">
+            Your {typeLabel} now has {pages} {pages === 1 ? 'page' : 'pages'}.
+          </p>
+        </div>
+        <div>
+          <Button variant="primary" onClick={onContinue}>
+            Continue
+          </Button>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="mt-6 flex flex-col gap-3">
       <div className="rounded-2xl border border-pc-border bg-pc-sage-soft p-4">
@@ -552,7 +735,13 @@ function CaseFeedbackPanel({
       </div>
 
       {cases.map((c) => (
-        <CaseCard key={c.caseId} entry={c} onConfirm={onConfirm} />
+        <CaseCard
+          key={c.caseId}
+          entry={c}
+          onConfirm={onConfirm}
+          onChange={onChange}
+          onAddMorePages={onAddMorePages}
+        />
       ))}
 
       <div>
@@ -567,15 +756,21 @@ function CaseFeedbackPanel({
 function CaseCard({
   entry,
   onConfirm,
+  onChange,
+  onAddMorePages,
 }: {
   entry: CaseEntry
   onConfirm: (caseId: string) => Promise<boolean>
+  onChange: (caseId: string, newDocType: string) => Promise<boolean>
+  onAddMorePages: (caseId: string) => void
 }) {
   const [pending, setPending] = useState(false)
-  const [showChangeToast, setShowChangeToast] = useState(false)
+  const [overrideOpen, setOverrideOpen] = useState(false)
+  const [revertedToast, setRevertedToast] = useState(false)
 
   const isConfirmed = entry.completionStatus === 'confirmed'
   const typeLabel = formatDocTypeLabel(entry.docType)
+  const statusLabel = completionStatusLabel(entry.completionStatus)
 
   const handleLooksRight = useCallback(async () => {
     setPending(true)
@@ -584,9 +779,24 @@ function CaseCard({
   }, [entry.caseId, onConfirm])
 
   const handleChange = useCallback(() => {
-    setShowChangeToast(true)
-    window.setTimeout(() => setShowChangeToast(false), 2500)
+    setOverrideOpen(true)
   }, [])
+
+  // Sprint M0.5-BUILD-03 — optimistic UI per ChatGPT Round 1 finding 2.
+  // Modal closes synchronously; updateCaseLabel paints the new state
+  // first, then fires the RPC. On RPC failure the hook reverts the
+  // local state and we surface a toast here.
+  const handleOverrideSelect = useCallback(
+    async (newDocType: string) => {
+      setOverrideOpen(false)
+      const ok = await onChange(entry.caseId, newDocType)
+      if (!ok) {
+        setRevertedToast(true)
+        window.setTimeout(() => setRevertedToast(false), 3000)
+      }
+    },
+    [entry.caseId, onChange],
+  )
 
   return (
     <div className="rounded-2xl border border-pc-border bg-pc-surface p-4">
@@ -595,12 +805,12 @@ function CaseCard({
         {typeLabel}
         {!isConfirmed && (
           <span className="ml-2 align-middle text-pc-caption font-normal text-pc-text-muted">
-            (suggested)
+            ({statusLabel.toLowerCase()})
           </span>
         )}
         {isConfirmed && (
           <span className="ml-2 align-middle text-pc-caption font-normal text-pc-sage">
-            ✔ confirmed
+            ✔ {statusLabel}
           </span>
         )}
       </div>
@@ -621,14 +831,39 @@ function CaseCard({
         </div>
       )}
 
-      {showChangeToast && (
+      {isConfirmed && (
+        <div className="mt-3">
+          <Button variant="tertiary" onClick={handleChange}>
+            Change
+          </Button>
+        </div>
+      )}
+
+      <div className="mt-3 border-t border-pc-border pt-3">
+        <button
+          type="button"
+          onClick={() => onAddMorePages(entry.caseId)}
+          className="text-pc-caption font-medium text-pc-navy underline hover:text-pc-navy-hover"
+        >
+          + Add more pages
+        </button>
+      </div>
+
+      {revertedToast && (
         <div
           role="status"
           className="mt-3 rounded-xl border border-pc-amber-soft bg-pc-amber-soft px-3 py-2 text-pc-caption text-pc-text"
         >
-          Coming soon — will let you change the type next.
+          Couldn't save that — try again.
         </div>
       )}
+
+      <OverrideModal
+        open={overrideOpen}
+        currentDocType={entry.docType}
+        onSelect={handleOverrideSelect}
+        onClose={() => setOverrideOpen(false)}
+      />
     </div>
   )
 }

@@ -95,18 +95,21 @@ Status: Needs more pages
 + Add more pages
 ```
 
-### Status Vocabulary — RATIFIED 2026-05-01
+### Status Vocabulary — RATIFIED 2026-05-01 (revised post BUILD-02)
 
 **Worker-facing statuses (ONLY these, ratified):**
 
 | Worker-facing label | Internal DB enum (`completion_status`) | Meaning |
 |---|---|---|
-| **Ready** | `complete` | Enough pages confirmed; calc-eligible facts can be extracted |
-| **Needs more pages** | `partial` | Confirmed but missing pages; can still use with limited result |
-| **Can still use** | `partial` (alternate render when worker chose partial-OK) | Partial info usable, with a limited result |
-| **Not sure yet** | `draft` or `suggested` | Awaiting label confirmation, or AI was uncertain |
+| **Saved** | `confirmed` | Worker accepted the label or overrode it; we have the document stored — but we haven't checked completeness yet. |
+| **Ready** | `complete` | Enough pages confirmed; calc-eligible facts can be extracted. **Reserved for M1+** — M0.5 doesn't compute completeness, so this label won't surface in M0.5. |
+| **Needs more pages** | `partial` | Confirmed but missing pages; can still use with limited result. |
+| **Can still use** | `partial` (alternate render when worker chose partial-OK) | Partial info usable, with a limited result. |
+| **Not sure yet** | `draft` or `suggested` | Awaiting label confirmation, or AI was uncertain. |
 
-**Internal-only DB enum values:** `draft`, `suggested`, `confirmed`, `partial`, `complete`. The renderer maps the enum to worker-facing labels; raw enum values never surface.
+**Why "Saved" not "Ready" for `confirmed` (revised 2026-05-01 in M0.5-BUILD-03 post ChatGPT Round 2 critique):** the original draft conflated label-confirmation with document-completeness. M0.5 only asks the worker *"is this label right?"* — not *"do you have all the pages?"*. "Ready" implies the document is verified-complete and ready for extraction; that's a stronger claim than M0.5 makes. "Saved" is honest: we have the file, the worker confirmed what it is, and we haven't asserted anything about completeness. M1 will introduce true completeness detection; only then does the "Ready" label fire.
+
+**Internal-only DB enum values:** `draft`, `suggested`, `confirmed`, `partial`, `complete`. The renderer (see `src/features/cases/vocabulary.ts`) maps the enum to worker-facing labels; raw enum values never surface.
 
 **Forbidden in worker-facing surfaces (ratified):**
 

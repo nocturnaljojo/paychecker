@@ -50,7 +50,7 @@ export function useClassifyBatch() {
   const [entries, setEntries] = useState<ClassifyEntry[]>([])
 
   const classifyBatch = useCallback(
-    async (documentIds: string[]) => {
+    async (documentIds: string[], caseId?: string) => {
       if (documentIds.length === 0) return
 
       // Seed local state in 'reading' status so the UI can show a spinner
@@ -78,7 +78,7 @@ export function useClassifyBatch() {
         while (queue.length > 0) {
           const id = queue.shift()
           if (!id) return
-          await classifyOne(id, token!, setEntries)
+          await classifyOne(id, token!, setEntries, caseId)
         }
       }
 
@@ -102,6 +102,7 @@ async function classifyOne(
   documentId: string,
   token: string,
   setEntries: React.Dispatch<React.SetStateAction<ClassifyEntry[]>>,
+  caseId?: string,
 ) {
   try {
     const response = await fetch('/api/classify', {
@@ -110,7 +111,10 @@ async function classifyOne(
         'content-type': 'application/json',
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ document_id: documentId }),
+      body: JSON.stringify({
+        document_id: documentId,
+        ...(caseId ? { case_id: caseId } : {}),
+      }),
     })
     if (!response.ok) {
       const errBody = (await safeJson(response)) as

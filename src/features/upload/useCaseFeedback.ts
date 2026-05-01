@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSupabaseClient } from '@/lib/supabase'
+import { docTypeLabel } from '@/features/cases/vocabulary'
 
 /**
  * Sprint M0.5-BUILD-01 (ADR-014).
@@ -165,30 +166,57 @@ export function useCaseFeedback(documentIds: ReadonlyArray<string>) {
     [supabase, refetchReadyCount],
   )
 
-  return { cases, readyCount, isLoading, confirmCase }
+  // [Change → pick label] — overrides doc_type AND flips to 'confirmed'.
+  // Sprint M0.5-BUILD-03. OPTIMISTIC UI per ChatGPT Round 1 finding 2:
+  //   1. Snapshot the current case state in case we need to revert.
+  //   2. Update local state IMMEDIATELY (UI reflects new label instantly).
+  //   3. Fire the RLS-protected RPC in the background.
+  //   4. On failure: restore from snapshot. Caller surfaces the toast.
+  // The owner (CaseCard) is responsible for closing the modal before
+  // calling this — that's what makes it feel optimistic. The revert
+  // path is silent until the toast appears.
+  const updateCaseLabel = useCallback(
+    async (caseId: string, newDocType: string): Promise<boolean> => {
+      const snapshot = cases.find((c) => c.caseId === caseId)
+      if (!snapshot) return false
+
+      // Optimistic: paint the new state first.
+      setCases((prev) =>
+        prev.map((c) =>
+          c.caseId === caseId
+            ? { ...c, docType: newDocType, completionStatus: 'confirmed' }
+            : c,
+        ),
+      )
+
+      const result = await supabase
+        .from('document_cases')
+        .update({ doc_type: newDocType, completion_status: 'confirmed' })
+        .eq('case_id', caseId)
+
+      if (result.error) {
+        // Revert.
+        setCases((prev) =>
+          prev.map((c) => (c.caseId === caseId ? snapshot : c)),
+        )
+        return false
+      }
+
+      await refetchReadyCount()
+      return true
+    },
+    [supabase, cases, refetchReadyCount],
+  )
+
+  return { cases, readyCount, isLoading, confirmCase, updateCaseLabel }
 }
 
 /**
- * Worker-facing display label for a doc_type. The detected_type values
- * are lowercase tokens (payslip / contract / super_statement / bank_export
- * / shift / other). Per the M0.5 vocabulary, we render them title-cased
- * with the underscore types collapsed to single words ("Super", "Bank").
+ * Re-export from src/features/cases/vocabulary.ts. Sprint M0.5-BUILD-03
+ * promoted the type-label mapping out of this hook so the dashboard,
+ * upload zone, and override modal share one source of truth.
+ *
+ * Kept as a re-export for backward compat with existing imports
+ * (UploadZone.tsx + useWorkerCases.ts both reference it).
  */
-export function formatDocTypeLabel(docType: string | null | undefined): string {
-  switch ((docType ?? '').toLowerCase()) {
-    case 'payslip':
-      return 'Payslip'
-    case 'contract':
-      return 'Contract'
-    case 'super_statement':
-      return 'Super'
-    case 'bank_export':
-      return 'Bank'
-    case 'shift':
-      return 'Time sheet'
-    case 'other':
-      return 'Other'
-    default:
-      return 'Other'
-  }
-}
+export const formatDocTypeLabel = docTypeLabel

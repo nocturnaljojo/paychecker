@@ -136,11 +136,23 @@ async function handler(request: Request): Promise<Response> {
   } catch {
     return jsonResponse(400, { error: 'Invalid JSON body' })
   }
-  const documentId = (body as { document_id?: string } | null)?.document_id
+  const parsedBody = body as {
+    document_id?: string
+    case_id?: string
+  } | null
+  const documentId = parsedBody?.document_id
   if (!documentId || typeof documentId !== 'string') {
     return jsonResponse(400, { error: 'Missing document_id' })
   }
-  console.log(`[classify] entry document_id=${documentId} clerk_user_prefix=${auth.clerkUserId.slice(0, 8)}`)
+  const extendCaseId =
+    typeof parsedBody?.case_id === 'string' && parsedBody.case_id.length > 0
+      ? parsedBody.case_id
+      : null
+  console.log(
+    `[classify] entry document_id=${documentId} ` +
+      `clerk_user_prefix=${auth.clerkUserId.slice(0, 8)} ` +
+      `extend_case=${extendCaseId ?? 'none'}`,
+  )
 
   // Service-role Supabase client for all DB ops in this function.
   const supabase = createClient(env.supabaseUrl, env.supabaseServiceRoleKey, {
@@ -303,27 +315,75 @@ async function handler(request: Request): Promise<Response> {
   const classificationId = classificationInsert.data.id as string
   console.log(`[classify] inserted classification_id=${classificationId}`)
 
-  // ADR-014 / Sprint M0.5-BUILD-01: create or attach a document_case for this
-  // document via the classify_with_case() RPC (Migration 0014). Atomic INSERT
-  // case + UPDATE documents.case_id in one Postgres transaction → no orphan
-  // case rows if the linkage fails. Idempotent if already linked.
+  // ADR-014 / Sprint M0.5-BUILD-01 + BUILD-03: link this document to a
+  // document_case. Two paths:
   //
-  // Case creation is supplementary to classification: if the RPC fails, the
-  // existing pipeline still returns a normal ClassifyOutput so the worker
-  // is never blocked. The UI degrades to pre-BUILD-01 behaviour for that doc.
+  // 1) New-case path (no extendCaseId in body) — Sprint M0.5-BUILD-01.
+  //    classify_with_case() RPC atomically creates a case and links the
+  //    document. Initial completion_status is 'suggested'.
+  //
+  // 2) Extend-case path (extendCaseId in body, /upload?case=X) — Sprint
+  //    M0.5-BUILD-03 + ChatGPT critique 2026-05-01 Round 2 finding 1.
+  //    The worker explicitly said "I'm adding to my {existing case
+  //    docType}". The classifier still ran (we keep its output for
+  //    storage routing + audit + future Layer 4 reconciliation) but its
+  //    detected_type is ADVISORY: we do NOT update the existing case's
+  //    doc_type or completion_status based on classifier output. Worker
+  //    intent wins. extend_case_with_document() RPC (Migration 0015) just
+  //    sets documents.case_id = extendCaseId; ownership is enforced
+  //    inside the function.
+  //
+  // Case linkage is supplementary to classification: if either RPC fails,
+  // the pipeline still returns a normal ClassifyOutput so the worker is
+  // never blocked. The UI degrades to pre-BUILD-01 behaviour for that doc.
   const caseDocType = routingStatus === 'failed'
     ? 'other'
     : (TYPE_TO_BUCKET[detectedType] ?? 'other')
-  const caseRpc = await supabase.rpc('classify_with_case', {
-    p_document_id: doc.id,
-    p_worker_id: workerId,
-    p_doc_type: caseDocType,
-    p_completion_status: 'suggested',
-  })
-  if (caseRpc.error) {
-    console.error(`[classify] case_rpc_error document_id=${doc.id} message=${caseRpc.error.message}`)
+  if (extendCaseId) {
+    // Verify case ownership before extending (defence in depth — RPC
+    // also checks). Read case's current doc_type so the advisory log
+    // captures classifier_said vs case_kept honestly.
+    const ownerCheck = await supabase
+      .from('document_cases')
+      .select('case_id, doc_type, worker_id')
+      .eq('case_id', extendCaseId)
+      .eq('worker_id', workerId)
+      .maybeSingle()
+    if (ownerCheck.error || !ownerCheck.data) {
+      console.error(
+        `[classify] extend_case_owner_mismatch document_id=${doc.id} case_id=${extendCaseId}`,
+      )
+    } else {
+      const extendRpc = await supabase.rpc('extend_case_with_document', {
+        p_document_id: doc.id,
+        p_worker_id: workerId,
+        p_case_id: extendCaseId,
+      })
+      if (extendRpc.error) {
+        console.error(
+          `[classify] extend_rpc_error document_id=${doc.id} case_id=${extendCaseId} message=${extendRpc.error.message}`,
+        )
+      } else {
+        console.log(
+          `[classify] case_extended_advisory document_id=${doc.id} ` +
+            `case_id=${extendCaseId} ` +
+            `classifier_said=${caseDocType} ` +
+            `case_kept=${ownerCheck.data.doc_type ?? 'unknown'}`,
+        )
+      }
+    }
   } else {
-    console.log(`[classify] case_created case_id=${caseRpc.data} doc_type=${caseDocType} completion_status=suggested`)
+    const caseRpc = await supabase.rpc('classify_with_case', {
+      p_document_id: doc.id,
+      p_worker_id: workerId,
+      p_doc_type: caseDocType,
+      p_completion_status: 'suggested',
+    })
+    if (caseRpc.error) {
+      console.error(`[classify] case_rpc_error document_id=${doc.id} message=${caseRpc.error.message}`)
+    } else {
+      console.log(`[classify] case_created case_id=${caseRpc.data} doc_type=${caseDocType} completion_status=suggested`)
+    }
   }
 
   // Failed routing — update state but don't move storage.
