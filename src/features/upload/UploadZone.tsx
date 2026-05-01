@@ -172,6 +172,36 @@ export function UploadZone() {
   const { cases, readyCount, confirmCase, updateCaseLabel } =
     useCaseFeedback(settledDocumentIds)
 
+  // Sprint M0.5-BUILD-04 — Issue 1 fix: once a document's case has
+  // flipped to 'confirmed', hide its file-row pill. The case panel is
+  // the single source of truth from that point forward; keeping the
+  // pill visible would surface contradictory copy ("Needs your check"
+  // alongside "✔ Saved"). Per ChatGPT critique 2026-05-01 round 3.
+  const visibleRows = useMemo(() => {
+    if (cases.length === 0) return rows
+    const confirmedDocIds = new Set<string>()
+    for (const c of cases) {
+      if (c.completionStatus === 'confirmed') {
+        confirmedDocIds.add(c.documentId)
+      }
+    }
+    if (confirmedDocIds.size === 0) return rows
+    const fileToDoc = new Map<string, string>()
+    for (const f of uploadState.files) {
+      const docId =
+        f.status === 'uploaded'
+          ? f.documentId
+          : f.status === 'duplicate'
+            ? f.existingDocumentId
+            : undefined
+      if (docId) fileToDoc.set(f.id, docId)
+    }
+    return rows.filter((r) => {
+      const docId = fileToDoc.get(r.id)
+      return !docId || !confirmedDocIds.has(docId)
+    })
+  }, [rows, cases, uploadState.files])
+
   // Owning state for the visual anchor + page-count surface — both
   // refetch on mount and on caseId change (no caching).
   const [extendingCase, setExtendingCase] = useState<
@@ -387,7 +417,7 @@ export function UploadZone() {
           />
         </div>
 
-        {rows.length > 0 && (
+        {visibleRows.length > 0 && (
           <section className="mt-6">
             <div className="mb-3 flex items-baseline justify-between">
               <h2 className="text-pc-h2 font-semibold text-pc-text">
@@ -402,7 +432,7 @@ export function UploadZone() {
               </span>
             </div>
             <ul className="flex flex-col gap-2">
-              {rows.map((row) => (
+              {visibleRows.map((row) => (
                 <RowItem key={row.id} row={row} />
               ))}
             </ul>

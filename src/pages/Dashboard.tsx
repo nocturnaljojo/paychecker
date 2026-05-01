@@ -15,6 +15,7 @@ import {
   bucketBadgeLabel,
   type BucketKey,
 } from '@/features/dashboard/useWorkerCases'
+import { AttentionPanel } from '@/features/dashboard/AttentionPanel'
 
 type Bucket = {
   key: BucketKey
@@ -159,7 +160,8 @@ function BucketCard({
 
 function Dashboard() {
   const navigate = useNavigate()
-  const { countByBucket, readyCount, totalCases, isLoading } = useWorkerCases()
+  const workerCases = useWorkerCases()
+  const { countByBucket, readyCount, totalCases, isLoading } = workerCases
 
   const nextStep = nextStepFor(countByBucket)
   const hasAnyCases = totalCases > 0
@@ -182,9 +184,26 @@ function Dashboard() {
   return (
     <main className="min-h-screen bg-pc-bg text-pc-text">
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-pc-border bg-pc-bg px-5 py-3.5">
-        <div>
+        <button
+          type="button"
+          onClick={() => hasAnyCases && navigate('/cases')}
+          disabled={!hasAnyCases}
+          className={cn(
+            'text-left',
+            hasAnyCases &&
+              'group cursor-pointer transition-colors hover:opacity-80',
+          )}
+        >
           <div className="text-[13px] font-medium uppercase tracking-widest text-pc-text-muted">
             Your papers
+            {hasAnyCases && (
+              <span
+                aria-hidden="true"
+                className="ml-1 text-pc-text-muted group-hover:text-pc-text"
+              >
+                ›
+              </span>
+            )}
           </div>
           <h1 className="mt-0.5 text-pc-h1 font-semibold [text-wrap:pretty]">
             {hasAnyCases
@@ -193,11 +212,13 @@ function Dashboard() {
                 : `${readyCount} papers ready`
               : 'Get started by adding a paper'}
           </h1>
-        </div>
+        </button>
         <UserButton afterSignOutUrl="/" />
       </header>
 
       <section className="mx-auto max-w-2xl px-5 pb-12 pt-5">
+        <AttentionPanel workerCases={workerCases} nextStep={nextStep} />
+
         {hasAnyCases && presentBuckets.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {presentBuckets.map((key) => (
@@ -209,12 +230,6 @@ function Dashboard() {
               </span>
             ))}
           </div>
-        )}
-
-        {nextStep && (
-          <p className="mt-4 text-pc-body font-medium text-pc-text [text-wrap:pretty]">
-            {nextStep}
-          </p>
         )}
 
         {!hasAnyCases && !isLoading && (

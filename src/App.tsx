@@ -4,6 +4,7 @@ import Onboarding from '@/pages/Onboarding'
 import Dashboard from '@/pages/Dashboard'
 import EmploymentContract from '@/pages/EmploymentContract'
 import Upload from '@/pages/Upload'
+import Cases from '@/pages/Cases'
 import SignIn from '@/pages/SignIn'
 import SignUp from '@/pages/SignUp'
 import PrivacyPolicy from '@/pages/PrivacyPolicy'
@@ -49,6 +50,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Upload />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/cases"
+          element={
+            <ProtectedRoute>
+              <Cases />
             </ProtectedRoute>
           }
         />
