@@ -53,7 +53,7 @@
 - `retros/` — `LATEST.md` + dated session retros (`YYYY-MM-DD-sNNN-topic.md`)
 - `product/` — buckets, workflows, positioning, pricing, **personas (who PayChecker serves)**
 - `architecture/` — fact model, memory stack, confirmation flow, **decisions (ADRs)**, **risks (failure modes by design)**
-- `planning/` — phase success criteria
+- `planning/` — phase success criteria + M0.5-spec (document-case foundation per ADR-014)
 - `research/` — awards research notes
 - `operations/` — billing actions, ops runbooks
 
@@ -72,7 +72,9 @@
 | `architecture/layered-memory-v01.md` | 4-layer memory read/write paths + privacy boundaries (Sprint A4). |
 | `architecture/extraction-service-v01.md` | Model selection (Haiku 4.5 + Sonnet 4.6 + Voyage-3-large 1024d) + output schemas + retry semantics (Sprint A3). |
 | `architecture/prompts/` | 6 prompt template skeletons (classify + 5 bucket extracts); Sprint B2 fills production copy. |
-| `architecture/integration-plan-v01.md` | Where new concepts (Calc Explanation / Worker Context / Sentiment) plug into the existing pipeline (Sprint INTEG-001). Adds Sprint E design constraint. |
+| `architecture/integration-plan-v01.md` | Where new concepts (Calc Explanation / Worker Context / Sentiment) plug into the existing pipeline (Sprint INTEG-001). Adds Sprint E design constraint. ADR placeholders renumbered 2026-05-01 → ADR-015/016/017. |
+| `document-case-paradigm-v01.md` | Document-case paradigm (ChatGPT critique 2026-05-01); ratified as ADR-014 in Sprint UX-FLOW-AUDIT. Design/critique trail. |
+| `planning/M0.5-spec.md` | M0.5 sub-phase spec — Migration 0012 schema + `api/classify.ts` shape change + UI acceptance criteria. Locked 2026-05-01; SQL applied at M0.5-BUILD-01 sprint start. |
 
 ### ADRs
 
@@ -90,7 +92,8 @@
 | ADR-010 | Allowance table shape | Accepted |
 | ADR-011 | Allowance unit enum extension | Accepted |
 | ADR-012 | "Add a Fact" UX pattern (stage-based) | Accepted (amended by ADR-013) |
-| ADR-013 | Upload-first fact capture (Document Intelligence) | Accepted |
+| ADR-013 | Upload-first fact capture (Document Intelligence) | Accepted (extended by ADR-014) |
+| ADR-014 | Document cases as primary evidence-organization model | Accepted |
 
 ### Migrations
 

@@ -2,9 +2,13 @@
 
 > **Source:** ChatGPT critique 2026-05-01 (in response to Contract3.jpeg classification failure today + user insight about multi-page documents).
 >
-> **Status:** Draft for ratification at tomorrow's UX-FLOW-AUDIT session. Proposes ADR-014.
+> **Status:** Ratified as **ADR-014** on 2026-05-01 (Sprint UX-FLOW-AUDIT) with two amendments — see `docs/architecture/decisions.md` §ADR-014 for the binding decision text. This document is the design/critique trail; the ADR is the contract.
 >
-> **Anchors:** M0.5 scope reshape (grouping + case-card UI from day one).
+> **Amendments at ratification:**
+> 1. Calculation does NOT operate at case level — it operates at confirmed-fact level (per ADR-001). Case level applies to classification, extraction, storage organization, and label-confirmation only.
+> 2. Case state machine is *orthogonal* to fact state machine. Confirming a case label does not auto-confirm extracted facts; each fact still walks the existing `proposed → confirmed` flow.
+>
+> **M0.5 scope locked: Option B (minimum-with-cases).** See `.claude/PLAN-PRJ-mvp-phases.md` §M0.5 for the locked checklist; `docs/planning/M0.5-spec.md` for schema + endpoints.
 
 ---
 
@@ -91,23 +95,27 @@ Status: Needs more pages
 + Add more pages
 ```
 
-### Status Vocabulary (CRITICAL)
+### Status Vocabulary — RATIFIED 2026-05-01
 
-Use ONLY these. No technical language:
+**Worker-facing statuses (ONLY these, ratified):**
 
-- **Ready** — enough pages to extract / check
-- **Needs more pages** — system thinks pages are missing
-- **Can still use** — partial info usable, with a limited result
-- **Not sure yet** — needs a label or more pages
+| Worker-facing label | Internal DB enum (`completion_status`) | Meaning |
+|---|---|---|
+| **Ready** | `complete` | Enough pages confirmed; calc-eligible facts can be extracted |
+| **Needs more pages** | `partial` | Confirmed but missing pages; can still use with limited result |
+| **Can still use** | `partial` (alternate render when worker chose partial-OK) | Partial info usable, with a limited result |
+| **Not sure yet** | `draft` or `suggested` | Awaiting label confirmation, or AI was uncertain |
 
-Never use:
+**Internal-only DB enum values:** `draft`, `suggested`, `confirmed`, `partial`, `complete`. The renderer maps the enum to worker-facing labels; raw enum values never surface.
 
-- ❌ Failed
-- ❌ Needs review
-- ❌ Error
-- ❌ Classification
-- ❌ Confidence
-- ❌ Validation
+**Forbidden in worker-facing surfaces (ratified):**
+
+- ❌ Failed · ❌ Needs review · ❌ Error
+- ❌ Classification · ❌ Confidence · ❌ Validation
+- ❌ Document type · ❌ Match / Mismatch
+- ❌ Any percentage or 0.0–1.0 score (raw confidence numbers stay operator-only per ADR-013)
+
+**Worker action terms (ratified):** Confirm (or `✔ Yes`) · Change (or `✏ Change`) · Add more pages · Continue.
 
 ### Confirm / Override Pattern
 
@@ -286,11 +294,19 @@ complete  → calc-ready  (extracted, in scope for engine)
 
 ---
 
-## Proposed ADR-014
+## ADR-014 (RATIFIED 2026-05-01)
 
-> PayChecker's data model is built around **document_cases**, not individual document files. A case is a living object representing one logical document (e.g., a contract, a payslip period) which may contain pages uploaded across multiple sessions. Classification, extraction, and calculation operate at the **case** level. Worker confirmation applies to the case label, not per-image.
+See `docs/architecture/decisions.md` §ADR-014 for the binding text. Summary:
 
-To be ratified in tomorrow's UX-FLOW-AUDIT.
+> PayChecker's evidence-organization model is built around `document_cases`, not individual document files. A case is a living object representing one logical document (e.g., a contract, a payslip period) which may contain pages uploaded across multiple sessions. **Classification, extraction, storage organization, and worker label-confirmation operate at the case level. Calculation continues to operate at the confirmed-fact level (ADR-001 unchanged); the case state machine is orthogonal to the fact state machine.**
+
+## UI surface ownership (RATIFIED 2026-05-01)
+
+- **`/upload`** — primary entry. Renders upload zone + case-card list inline. No new `/cases` route in M0.5.
+- **`/upload/case/{case_id}`** — direct deep-link to a case (used by "Add more pages" returning to a specific case). Resolves to the same `/upload` page scrolled to the relevant card.
+- **`/dashboard`** — bucket cards remain the entry from the dashboard. Tapping a bucket card routes to `/upload?bucket={contract|payslip|…}` (filter, not separate page).
+
+M1 may evolve to a separate `/cases` index when case volume justifies it.
 
 ---
 

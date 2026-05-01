@@ -10,7 +10,9 @@ Three concepts surfaced in brainstorm: **Calculation Explanation Layer** (POL-00
 
 Per the project's architectural discipline: **no new concept enters the system as a standalone.** Each must integrate into the existing pipeline.
 
-This document audits the existing pipeline, identifies where each concept plugs in, defines trigger conditions, and updates affected components' design constraints. It is a structural audit, not a roadmap. ADR-014 / ADR-015 / ADR-016 ratify later (Phase 1 first sprint) once integration shape is locked here.
+This document audits the existing pipeline, identifies where each concept plugs in, defines trigger conditions, and updates affected components' design constraints. It is a structural audit, not a roadmap. ADR-015 / ADR-016 / ADR-017 ratify later (Phase 1 first sprint) once integration shape is locked here.
+
+> **2026-05-01 renumber note.** Originally reserved ADR-014/015/016 for POL-004/POL-005/POL-006. ADR-014 was ratified on 2026-05-01 for the document-case paradigm (Sprint UX-FLOW-AUDIT, see `decisions.md` §ADR-014). The three POLs in this document shift +1 to ADR-015/016/017. Numbering tracks ratification order, not reservation order.
 
 ## Current pipeline (BEFORE)
 
@@ -219,7 +221,7 @@ DEFERRED to Phase 2+. Not designed today. Not modelled today. Not flagged as a n
 1. **Real-world Phase 1 data shows tone adaptation BEYOND what Worker Context self-declaration provides is needed.** Concretely: Apete or his cohort report situations where the rendered message did not adapt enough despite Worker Context being set. Without this real-world signal, sentiment classification is a solution looking for a problem.
 2. **Sentiment classifier validated specifically on ESL text** — ideally a PALM worker corpus, or equivalent Pacific-Islander English benchmark. Generic English sentiment classifiers misread ESL emphatically (the emotional valence of "I asked but he didn't say" reads neutral to a generic classifier and is loaded to Apete). Without this, classifier output is unsafe to act on.
 3. **Privacy policy v3 update designed.** Sentiment analysis crosses APP 6 (use only as disclosed) — generic disclosure won't cover it. Worker opt-in mechanism required.
-4. **ADR-016 ratified** with explicit risk acknowledgment: sentiment surface is the closest PayChecker has come to advice-tool territory; the ADR must name this and define the boundary.
+4. **ADR-017 ratified** with explicit risk acknowledgment: sentiment surface is the closest PayChecker has come to advice-tool territory; the ADR must name this and define the boundary.
 5. **Workplace dependency consequences modeled.** What if the sentiment surface flags distress AND the worker has flagged employer-controlled housing? The cascade matters; the design must address it.
 
 If any one is missing, defer. The conditions are conjunctive, not disjunctive.
@@ -244,8 +246,8 @@ If any one is missing, defer. The conditions are conjunctive, not disjunctive.
 | # | Failure | Mitigation |
 |---|---|---|
 | (i) | POL-004 `calculation_explanations` row drifts from `comparisons.expected_amounts` (e.g., schema migrations on one but not the other) | Migration 0013 ships them in lockstep; Sprint E's prep migration adds the structured metadata to `comparisons.expected_amounts` AND creates `calculation_explanations`. FK constraint enforces presence-on-comparison. |
-| (ii) | POL-005 worker_context tone adaptation accidentally changes a number (e.g., "translate amounts to USD for remittance display") | Pre-render adapter contract: emits *strings* derived from `comparisons` numbers + `calculation_explanations`. Adapter has no write path back. ADR-015's ratification text must include "tone not math" as a non-negotiable. |
-| (iii) | POL-006 ships in Phase 2 without privacy policy v3, exposing sentiment classifications without disclosure | Re-trigger condition 3 explicitly gates this. Without v3, ADR-016 cannot ratify. |
+| (ii) | POL-005 worker_context tone adaptation accidentally changes a number (e.g., "translate amounts to USD for remittance display") | Pre-render adapter contract: emits *strings* derived from `comparisons` numbers + `calculation_explanations`. Adapter has no write path back. ADR-016's ratification text must include "tone not math" as a non-negotiable. |
+| (iii) | POL-006 ships in Phase 2 without privacy policy v3, exposing sentiment classifications without disclosure | Re-trigger condition 3 explicitly gates this. Without v3, ADR-017 cannot ratify. |
 | (iv) | Status taxonomy gets quietly extended with a `'breach'` value via a future migration | CHECK constraint enforces enum at the DB layer. The five forbidden values are documented here AND in calc-rules-v01.md (as future addition); CI lint can grep for them in code. |
 | (v) | Worker Context dependency data leaks via operator support without redaction | R-006 already requires operator support runbook (Phase 1+); this audit elevates `worker_context` to a top-priority redaction target. |
 
@@ -278,13 +280,13 @@ If any one is missing, defer. The conditions are conjunctive, not disjunctive.
 - **POL-005 rollback:** `DROP TABLE worker_context CASCADE`. Pre-render adapter degrades to default tone for all workers. No data migration required (worker_context CASCADEs with worker deletion already).
 - **Sprint E structured metadata rollback:** the metadata is additive jsonb keys in `expected_amounts`. Removing them is a one-statement code change in Sprint E; no DB migration required. **No one-way door.**
 - **POL-006 deferral:** by definition reversible — the only commitment is "we will not design this until 5 conditions are met."
-- **Pattern revision (vs tuning):** if the integration shape itself proves wrong (e.g., POL-004 should have been embed not insert), a new ADR supersedes ADR-014; this v01 doc stays in history per ADRs-are-append-only. Cost: one ADR + the affected layer's implementation, not the whole integration model.
+- **Pattern revision (vs tuning):** if the integration shape itself proves wrong (e.g., POL-004 should have been embed not insert), a new ADR supersedes ADR-015; this v01 doc stays in history per ADRs-are-append-only. Cost: one ADR + the affected layer's implementation, not the whole integration model.
 
 **5/5 cleared. No blockers.** One residual: privacy policy v2 (Phase 1+) is a hard prerequisite for POL-005 ship; v3 is a hard prerequisite for POL-006 reconsideration. Both are existing Phase-0+ finish-line items per ADR-006; this audit adds specifics.
 
 ## What this document does NOT cover
 
-- ADR-014 / ADR-015 / ADR-016 ratification (Phase 1 first sprint).
+- ADR-015 / ADR-016 / ADR-017 ratification (Phase 1 first sprint).
 - Migration 0013 / Migration 0014 SQL (Phase 1 execution sprints; Sprint E's prep migration handles the `comparisons.expected_amounts` structured-metadata addition).
 - UI specifics for explanation rendering (Phase 1 build sprints — `add-fact-pattern.md` style spec for the explanation surface).
 - Sentiment classifier choice (Phase 2+ — re-trigger condition 2).
@@ -295,5 +297,5 @@ If any one is missing, defer. The conditions are conjunctive, not disjunctive.
 
 - An integration shape proves wrong in production → version bump (`integration-plan-v02.md`); supersede this file; cross-reference forward.
 - A new concept surfaces (POL-NNN+) → audit-and-amend; either append a new "Layer D / E / …" section or version bump if the structural change is large.
-- ADR-014 / 015 / 016 ratify → mark this doc with forward-references to the ADRs; v01 stays as the integration audit; ADRs are the binding decisions.
+- ADR-015 / 016 / 017 ratify → mark this doc with forward-references to the ADRs; v01 stays as the integration audit; ADRs are the binding decisions.
 - A pressure-test failure surfaces in production → append mitigation; version bump.

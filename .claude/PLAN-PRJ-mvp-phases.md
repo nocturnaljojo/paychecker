@@ -29,6 +29,36 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` complete · `[!]` blocked
 - [x] Build "Your data" home screen at `/dashboard` (5 worker-facing bucket stubs per `YourData.jsx`)
 - [x] Move smoke-test upload UI to `/debug` (env-gated, dev-only)
 - [x] Privacy policy v1 placeholder route at `/privacy` (real content blocks ship-to-real-worker)
+
+### M0.5 — Document case foundation (sub-phase, ratified 2026-05-01 per ADR-014)
+
+**Goal:** Smallest-useful slice of the upload-first pipeline (ADR-013) with the document-case data model in place from day one (ADR-014). One worker, one upload, one case, one classification, one confirm-or-correct. NO calc engine in this slice. Validates the case-card UI + worker-confirmed-label paradigm before the calc engine ships.
+
+**Scope (Option B — minimum-with-cases, locked):**
+
+- [ ] Migration 0012 — `document_cases` table + `documents.case_id` FK (per `docs/planning/M0.5-spec.md`)
+- [ ] Update `api/classify.ts` to accept array of `document_id`s; falls back to per-image when array length = 1
+- [ ] `/upload` page redesigned: upload zone + inline case-card list
+- [ ] Case-card UI: `✔ Yes` / `✏ Change` + 5-bucket override (Contract / Payslip / Bank / Super / Other)
+- [ ] Worker-facing status vocabulary live (Ready / Needs more pages / Can still use / Not sure yet)
+- [ ] DB enum `completion_status` (`draft`/`suggested`/`confirmed`/`partial`/`complete`) + renderer mapping to worker-facing labels
+- [ ] "+ Add more pages" button — links new upload to existing case
+- [ ] Direct deep-link `/upload/case/{case_id}` resolves inline (scrolls to card)
+- [ ] Smoke test: Apete-shape walkthrough (upload 1 page → see case card → confirm or change → see status)
+
+**Explicitly DEFERRED to M1+:**
+
+- 10-second proximity grouping heuristic (case-creation strategy stays singleton-per-upload in M0.5)
+- Multi-image bulk upload UI
+- Visual + semantic continuity detection
+- Multi-day session tracking
+- A separate `/cases` index route
+- Case archival + cross-case merging
+
+**Success criterion for M0.5:** Worker uploads a document; system creates a case with one document; classification proposes a label; worker confirms or overrides; case status surfaces in worker vocabulary; no calc engine required.
+
+**Gate from M0.5 to remaining Phase 0:** All M0.5 boxes ticked + case-card UI passes Apete-misreading review (no forbidden vocabulary surfaces).
+
 <!-- Order respects worker_classification_facts.award_id FK constraint:
      awards must exist before Layer 1 inserts.
      Reordered 2026-04-26 s003h6 per stocktake report. -->
