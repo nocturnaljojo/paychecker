@@ -54,6 +54,7 @@
 - `product/` — buckets, workflows, positioning, pricing, **personas (who PayChecker serves)**
 - `architecture/` — fact model, memory stack, confirmation flow, **decisions (ADRs)**, **risks (failure modes by design)**
 - `planning/` — phase success criteria + M0.5-spec (document-case foundation per ADR-014)
+- `flows/` — named UX patterns the system composes (`correction-loop-v01.md` = SEE → THINK → ACT, BUILD-04 → BUILD-08)
 - `research/` — awards research notes
 - `operations/` — billing actions, ops runbooks
 
