@@ -1,4 +1,3 @@
-import { useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { UserButton } from '@clerk/clerk-react'
 import {
@@ -10,107 +9,130 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
-
-type BucketStatus = 'empty'
+import {
+  useWorkerCases,
+  nextStepFor,
+  bucketBadgeLabel,
+  type BucketKey,
+} from '@/features/dashboard/useWorkerCases'
 
 type Bucket = {
-  key: string
-  id: string
+  key: BucketKey
   name: string
   desc: string
   Icon: typeof FileText
-  primary: string
+  emptyAction: string
   capture: string
 }
 
-// Mirrors public/design-system/.../YourData.jsx — five worker-facing buckets.
-// `id` letters preserve the workflow letter codes (A/B/F/D/E) — F-not-C
-// for shifts is intentional per docs/product/workflows.md.
+// Five worker-facing buckets, named per ratified M0.5 vocabulary
+// (docs/document-case-paradigm-v01.md + ChatGPT critique 2026-05-01).
+// Letter labels (A/B/F/D/E) and "Ground truth" / "manual entry" /
+// "forward email" jargon retired in Sprint M0.5-BUILD-02.
 const BUCKETS: Bucket[] = [
   {
     key: 'contract',
-    id: 'A',
-    name: 'Employment contract',
+    name: 'Contract',
     desc: 'What your employer promised — hours, rate, classification.',
     Icon: FileText,
-    primary: 'Upload contract',
-    capture: 'Photo · PDF · manual entry',
+    emptyAction: 'Add contract',
+    capture: 'Photo · PDF · or type it in',
   },
   {
     key: 'payslips',
-    id: 'B',
     name: 'Payslips',
     desc: 'What your employer says happened each pay cycle.',
     Icon: Download,
-    primary: 'Add payslip',
-    capture: 'Photo · PDF · forward email',
+    emptyAction: 'Add payslip',
+    capture: 'Photo · PDF · or send by email',
   },
   {
     key: 'shifts',
-    id: 'F',
     name: 'Shifts',
     desc: 'What you say actually happened — logged as you work.',
     Icon: Calendar,
-    primary: 'Log a shift',
+    emptyAction: 'Log a shift',
     capture: 'Logged in-app',
   },
   {
     key: 'super',
-    id: 'D',
-    name: 'Super fund statements',
-    desc: 'Ground truth — what your super fund actually received.',
+    name: 'Super',
+    desc: 'What your super fund actually received.',
     Icon: Wallet,
-    primary: 'Add statement',
-    capture: 'Screenshot · PDF · forward email',
+    emptyAction: 'Add statement',
+    capture: 'Screenshot · PDF · or send by email',
   },
   {
     key: 'bank',
-    id: 'E',
-    name: 'Bank deposit records',
-    desc:
-      'Ground truth — what your bank actually received. We only look at employer deposits; the rest is discarded.',
+    name: 'Bank deposits',
+    desc: 'What your bank actually received. We only look at employer deposits; the rest is discarded.',
     Icon: Lock,
-    primary: 'Add bank record',
-    capture: 'Screenshot · PDF · forward email',
+    emptyAction: 'Add bank record',
+    capture: 'Screenshot · PDF · or send by email',
   },
 ]
 
-function StatusPill({ status }: { status: BucketStatus }) {
+function BucketStatusPill({ count }: { count: number }) {
+  if (count === 0) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium',
+          'border border-dashed border-pc-border-strong bg-transparent text-pc-text-muted',
+        )}
+      >
+        Nothing yet
+      </span>
+    )
+  }
   return (
     <span
       className={cn(
         'inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12px] font-medium',
-        status === 'empty' &&
-          'border border-dashed border-pc-border-strong bg-transparent text-pc-text-muted',
+        'bg-pc-sage-soft text-pc-sage',
       )}
     >
-      Empty
+      ✔ {count} added
     </span>
   )
 }
 
 function BucketCard({
   bucket,
-  onPrimaryClick,
+  count,
+  onAdd,
 }: {
   bucket: Bucket
-  onPrimaryClick: () => void
+  count: number
+  onAdd: () => void
 }) {
   const { Icon } = bucket
+  const hasCases = count > 0
+  const action = hasCases ? `Add another ${bucket.name.toLowerCase()}` : bucket.emptyAction
+
   return (
-    <div className="rounded-2xl border border-dashed border-pc-border-strong bg-pc-surface p-4">
+    <div
+      className={cn(
+        'rounded-2xl bg-pc-surface p-4',
+        hasCases
+          ? 'border border-pc-border'
+          : 'border border-dashed border-pc-border-strong',
+      )}
+    >
       <div className="flex items-start gap-3">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-pc-border text-pc-text-muted">
+        <div
+          className={cn(
+            'flex h-11 w-11 shrink-0 items-center justify-center rounded-xl',
+            hasCases
+              ? 'bg-pc-sage-soft text-pc-sage'
+              : 'bg-pc-border text-pc-text-muted',
+          )}
+        >
           <Icon size={22} strokeWidth={1.75} />
         </div>
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="text-[15px] font-semibold text-pc-text">
-              {bucket.name}
-            </div>
-            <span className="font-mono text-[11px] font-medium text-[#9B9485]">
-              {bucket.id}
-            </span>
+          <div className="text-[15px] font-semibold text-pc-text">
+            {bucket.name}
           </div>
           <p className="mt-1 text-pc-caption leading-snug text-pc-text-muted [text-wrap:pretty]">
             {bucket.desc}
@@ -119,12 +141,12 @@ function BucketCard({
       </div>
 
       <div className="mt-3.5">
-        <StatusPill status="empty" />
+        <BucketStatusPill count={count} />
       </div>
 
       <div className="mt-3.5">
-        <Button variant="primary" block onClick={onPrimaryClick}>
-          {bucket.primary}
+        <Button variant={hasCases ? 'secondary' : 'primary'} block onClick={onAdd}>
+          {action}
         </Button>
       </div>
 
@@ -135,29 +157,26 @@ function BucketCard({
   )
 }
 
-function Toast({ children }: { children: ReactNode }) {
-  return (
-    <div className="fixed inset-x-0 bottom-6 mx-auto w-fit max-w-[90vw] rounded-pc-card border border-pc-border bg-pc-text px-4 py-3 text-pc-caption text-white shadow-pc-modal">
-      {children}
-    </div>
-  )
-}
-
 function Dashboard() {
   const navigate = useNavigate()
-  const [toast, setToast] = useState<string | null>(null)
+  const { countByBucket, readyCount, totalCases, isLoading } = useWorkerCases()
 
-  function comingSoon(label: string) {
-    setToast(`${label} — Phase 0, not wired yet`)
-    window.setTimeout(() => setToast(null), 2400)
-  }
+  const nextStep = nextStepFor(countByBucket)
+  const hasAnyCases = totalCases > 0
+  const presentBuckets: BucketKey[] = (Object.entries(countByBucket) as [
+    BucketKey,
+    number,
+  ][])
+    .filter(([, n]) => n > 0)
+    .map(([k]) => k)
 
   function handleBucketTap(bucket: Bucket) {
-    if (bucket.key === 'contract') {
-      navigate('/buckets/employment-contract')
-      return
-    }
-    comingSoon(bucket.primary)
+    // Every bucket routes through the upload flow; the worker takes a
+    // photo or picks a file, the classifier suggests a doc_type, and
+    // the worker confirms or overrides per ADR-014. The query string
+    // is a hint for future filtering — UploadZone doesn't act on it
+    // yet.
+    navigate(`/upload?bucket=${bucket.key}`)
   }
 
   return (
@@ -165,42 +184,63 @@ function Dashboard() {
       <header className="sticky top-0 z-10 flex items-center justify-between border-b border-pc-border bg-pc-bg px-5 py-3.5">
         <div>
           <div className="text-[13px] font-medium uppercase tracking-widest text-pc-text-muted">
-            Your data
+            Your papers
           </div>
           <h1 className="mt-0.5 text-pc-h1 font-semibold [text-wrap:pretty]">
-            What's in, what's missing.
+            {hasAnyCases
+              ? readyCount === 1
+                ? '1 paper ready'
+                : `${readyCount} papers ready`
+              : 'Get started by adding a paper'}
           </h1>
         </div>
         <UserButton afterSignOutUrl="/" />
       </header>
 
       <section className="mx-auto max-w-2xl px-5 pb-12 pt-5">
-        <p className="text-pc-body text-pc-text-muted [text-wrap:pretty]">
-          Five buckets you'll fill over time. Add what you have; we'll guide
-          you through the rest. None of these are wired yet — Phase 0 is
-          still building out each one.
-        </p>
+        {hasAnyCases && presentBuckets.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {presentBuckets.map((key) => (
+              <span
+                key={key}
+                className="inline-flex items-center gap-1.5 rounded-full bg-pc-sage-soft px-3 py-1 text-pc-caption text-pc-sage"
+              >
+                ✔ {bucketBadgeLabel(key)}
+              </span>
+            ))}
+          </div>
+        )}
 
-        <div className="mt-6 pl-1 font-mono text-[11px] font-medium uppercase tracking-[0.08em] text-pc-text-muted">
-          Your data buckets
-        </div>
+        {nextStep && (
+          <p className="mt-4 text-pc-body font-medium text-pc-text [text-wrap:pretty]">
+            {nextStep}
+          </p>
+        )}
 
-        <div className="mt-3 flex flex-col gap-3">
+        {!hasAnyCases && !isLoading && (
+          <p className="mt-2 text-pc-body text-pc-text-muted [text-wrap:pretty]">
+            Five buckets you'll fill over time. Add what you have; we'll guide
+            you through the rest.
+          </p>
+        )}
+
+        <div className="mt-6 flex flex-col gap-3">
           {BUCKETS.map((bucket) => (
             <BucketCard
               key={bucket.key}
               bucket={bucket}
-              onPrimaryClick={() => handleBucketTap(bucket)}
+              count={countByBucket[bucket.key]}
+              onAdd={() => handleBucketTap(bucket)}
             />
           ))}
         </div>
 
-        <p className="mt-4 px-1 text-center text-[13px] leading-normal text-pc-text-muted [text-wrap:pretty]">
-          Add what you have. We'll ask for the rest when it becomes useful.
+        <p className="mt-6 px-1 text-center text-[13px] leading-normal text-pc-text-muted [text-wrap:pretty]">
+          {hasAnyCases
+            ? "You're getting started — nice work."
+            : "We'll guide you step by step."}
         </p>
       </section>
-
-      {toast && <Toast>{toast}</Toast>}
     </main>
   )
 }
