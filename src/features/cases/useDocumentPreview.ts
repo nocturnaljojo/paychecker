@@ -41,7 +41,7 @@ type DocumentRow = {
   storage_path: string
   mime_type: string | null
   original_filename: string | null
-  created_at: string
+  uploaded_at: string
 }
 
 export function useDocumentPreview(
@@ -65,9 +65,9 @@ export function useDocumentPreview(
 
     const result = await supabase
       .from('documents')
-      .select('id, storage_path, mime_type, original_filename, created_at')
+      .select('id, storage_path, mime_type, original_filename, uploaded_at')
       .eq('case_id', caseId)
-      .order('created_at', { ascending: true })
+      .order('uploaded_at', { ascending: true })
 
     if (result.error) {
       setDocuments([])
