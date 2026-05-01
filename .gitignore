@@ -6,6 +6,7 @@ node_modules/
 .env.production.local
 *.log
 .vercel
+.claude/tmp/
 
 # Vite build output
 dist/
