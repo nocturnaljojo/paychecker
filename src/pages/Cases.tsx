@@ -9,6 +9,7 @@ import {
 } from '@/features/cases/vocabulary'
 import { OverrideModal } from '@/features/upload/OverrideModal'
 import ConsentRequired from '@/components/layout/ConsentRequired'
+import { IdentityIndicator } from '@/components/IdentityIndicator'
 
 /**
  * Sprint M0.5-BUILD-04 — /cases route ("Your papers").
@@ -59,7 +60,8 @@ function CasesView() {
         >
           ← Back
         </button>
-        <h1 className="mt-4 text-pc-h1 font-semibold [text-wrap:pretty]">
+        <IdentityIndicator className="mt-3" />
+        <h1 className="mt-3 text-pc-h1 font-semibold [text-wrap:pretty]">
           Your papers
         </h1>
         <p className="mt-2 text-pc-body text-pc-text-muted [text-wrap:pretty]">

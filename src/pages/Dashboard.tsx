@@ -16,6 +16,7 @@ import {
   type BucketKey,
 } from '@/features/dashboard/useWorkerCases'
 import { AttentionPanel } from '@/features/dashboard/AttentionPanel'
+import { IdentityIndicator } from '@/components/IdentityIndicator'
 
 type Bucket = {
   key: BucketKey
@@ -217,6 +218,7 @@ function Dashboard() {
       </header>
 
       <section className="mx-auto max-w-2xl px-5 pb-12 pt-5">
+        <IdentityIndicator className="mb-3" />
         <AttentionPanel workerCases={workerCases} nextStep={nextStep} />
 
         {hasAnyCases && presentBuckets.length > 0 && (

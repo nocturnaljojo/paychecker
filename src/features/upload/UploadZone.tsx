@@ -22,6 +22,7 @@ import {
 import { OverrideModal } from './OverrideModal'
 import { completionStatusLabel, docTypeLabel } from '@/features/cases/vocabulary'
 import { useSupabaseClient } from '@/lib/supabase'
+import { IdentityIndicator } from '@/components/IdentityIndicator'
 
 const ACCEPT_ATTR = ACCEPTED_MIME_TYPES.join(',')
 
@@ -292,7 +293,8 @@ export function UploadZone() {
         >
           ← Back to your data
         </button>
-        <h1 className="mt-4 text-[26px] font-semibold leading-tight [text-wrap:pretty]">
+        <IdentityIndicator className="mt-3" />
+        <h1 className="mt-3 text-[26px] font-semibold leading-tight [text-wrap:pretty]">
           Add documents
         </h1>
         <p className="mt-2 text-pc-body leading-normal text-pc-text-muted [text-wrap:pretty]">
