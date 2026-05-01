@@ -1,0 +1,200 @@
+import { useEffect } from 'react'
+import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/Button'
+import {
+  useDocumentPreview,
+  type PreviewableDocument,
+} from './useDocumentPreview'
+
+/**
+ * PreviewModal — Sprint M0.5-BUILD-06.
+ *
+ * Full-screen modal that shows all documents linked to a case so the
+ * worker can verify what they're labelling. Per BUILD-06 hard-stop
+ * rules: no zoom, no editing, no annotation, no built-in PDF viewer
+ * (PDFs open in a new tab via the signed URL).
+ *
+ * Mirrors OverrideModal's interaction model — body scroll lock, Esc to
+ * close, backdrop tap to close — for a consistent worker experience.
+ *
+ * Per ChatGPT round 5 critique: "preview is not a feature — preview is
+ * permission to think." The job here is verification, not display
+ * polish.
+ */
+
+type PreviewModalProps = {
+  open: boolean
+  caseId: string | null
+  docTypeLabel: string
+  onClose: () => void
+}
+
+export function PreviewModal({
+  open,
+  caseId,
+  docTypeLabel,
+  onClose,
+}: PreviewModalProps) {
+  const { documents, isLoading, hasError } = useDocumentPreview(
+    open ? caseId : null,
+  )
+
+  useEffect(() => {
+    if (!open) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previous
+    }
+  }, [open])
+
+  useEffect(() => {
+    if (!open) return
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, onClose])
+
+  if (!open) return null
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Preview ${docTypeLabel}`}
+      className="fixed inset-0 z-50"
+    >
+      <button
+        type="button"
+        aria-label="Close"
+        onClick={onClose}
+        className="absolute inset-0 bg-black/70"
+      />
+
+      <div className="absolute inset-0 flex flex-col bg-pc-bg">
+        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-pc-border bg-pc-bg px-5 py-3.5">
+          <h2 className="truncate text-pc-h2 font-semibold text-pc-text">
+            {docTypeLabel}
+          </h2>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close"
+            className="ml-3 shrink-0 rounded-full p-2 text-pc-text-muted hover:bg-pc-border hover:text-pc-text"
+          >
+            ✕
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto px-4 py-4">
+          {isLoading && (
+            <div className="flex h-40 items-center justify-center text-pc-caption text-pc-text-muted">
+              Loading…
+            </div>
+          )}
+
+          {!isLoading && hasError && (
+            <div className="mx-auto mt-8 max-w-md rounded-2xl border border-pc-coral-soft bg-pc-coral-soft p-4 text-center text-pc-caption text-pc-text">
+              Couldn't load preview — close and try again.
+            </div>
+          )}
+
+          {!isLoading && !hasError && documents.length === 0 && (
+            <div className="mx-auto mt-8 max-w-md rounded-2xl border border-pc-border bg-pc-surface p-4 text-center text-pc-caption text-pc-text-muted">
+              No pages linked to this paper yet.
+            </div>
+          )}
+
+          {!isLoading && !hasError && documents.length > 0 && (
+            <ul className="mx-auto flex max-w-2xl flex-col gap-4">
+              {documents.map((doc, index) => (
+                <li key={doc.documentId}>
+                  <DocumentPreview doc={doc} pageNumber={index + 1} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DocumentPreview({
+  doc,
+  pageNumber,
+}: {
+  doc: PreviewableDocument
+  pageNumber: number
+}) {
+  if (doc.errorMessage || !doc.signedUrl) {
+    return (
+      <div className="rounded-2xl border border-pc-coral-soft bg-pc-coral-soft p-4 text-pc-caption text-pc-text">
+        Page {pageNumber}: couldn't load this one.
+      </div>
+    )
+  }
+
+  if (doc.mimeType.startsWith('image/')) {
+    return (
+      <figure className="overflow-hidden rounded-2xl border border-pc-border bg-pc-surface">
+        <img
+          src={doc.signedUrl}
+          alt={`Page ${pageNumber}`}
+          className="block w-full object-contain"
+          loading="lazy"
+        />
+        <figcaption className="border-t border-pc-border bg-pc-surface px-3 py-2 font-mono text-[11px] uppercase tracking-wide text-pc-text-muted">
+          Page {pageNumber}
+        </figcaption>
+      </figure>
+    )
+  }
+
+  if (doc.mimeType === 'application/pdf') {
+    return (
+      <div className="rounded-2xl border border-pc-border bg-pc-surface p-4">
+        <div className="text-pc-body font-medium text-pc-text">
+          Page {pageNumber} — PDF
+        </div>
+        <p className="mt-1 text-pc-caption text-pc-text-muted">
+          {doc.filename}
+        </p>
+        <div className="mt-3">
+          <a
+            href={doc.signedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={cn(
+              'inline-flex items-center justify-center rounded-xl px-4 py-2 text-pc-body font-medium',
+              'bg-pc-navy text-white hover:bg-pc-navy-hover',
+            )}
+          >
+            Open PDF
+          </a>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-2xl border border-pc-border bg-pc-surface p-4">
+      <div className="text-pc-body font-medium text-pc-text">
+        Page {pageNumber}
+      </div>
+      <p className="mt-1 text-pc-caption text-pc-text-muted">
+        Can't preview this file type ({doc.mimeType}).
+      </p>
+      <div className="mt-3">
+        <Button
+          variant="secondary"
+          onClick={() => window.open(doc.signedUrl ?? '', '_blank')}
+        >
+          Open in new tab
+        </Button>
+      </div>
+    </div>
+  )
+}

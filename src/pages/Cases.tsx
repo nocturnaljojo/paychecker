@@ -8,25 +8,26 @@ import {
   docTypeLabel,
 } from '@/features/cases/vocabulary'
 import { OverrideModal } from '@/features/upload/OverrideModal'
+import { PreviewModal } from '@/features/cases/PreviewModal'
 import ConsentRequired from '@/components/layout/ConsentRequired'
 import { IdentityIndicator } from '@/components/IdentityIndicator'
 
 /**
  * Sprint M0.5-BUILD-04 — /cases route ("Your papers").
+ * Updated in Sprint M0.5-BUILD-06 — tap-to-preview wired in.
  *
  * Worker can navigate here from /dashboard ("Your papers" header link)
- * to see their entire case history, override any misclassification, or
- * tap into a case to add more pages. This is the meta-fix from ChatGPT
- * critique 2026-05-01 round 3: the system needed "memory" from the
- * worker's perspective — a place to come back to.
+ * to see their entire case history, override any misclassification,
+ * extend a case with more pages, or preview the actual document.
  *
  * Sort:
  *   1. Cases needing attention first (draft / suggested status)
  *   2. Then by created_at DESC
  *
  * Behaviour per row:
- *   - Tap [Change]   → OverrideModal (optimistic UI; revert + toast)
- *   - Tap card body  → /upload?case={case_id} (extend the case)
+ *   - Tap card body         → PreviewModal (BUILD-06)
+ *   - Tap [Change]          → OverrideModal (BUILD-04 optimistic UI)
+ *   - Tap [+ Add more pages] → /upload?case={case_id} (extend)
  *
  * NO filters, search, sort options, pagination, delete, or archive in
  * M0.5 per BUILD-04 hard-stop rule.
@@ -48,6 +49,14 @@ function CasesView() {
   const readyCount = useMemo(
     () => cases.filter((c) => c.completionStatus !== 'draft').length,
     [cases],
+  )
+
+  // Sprint M0.5-BUILD-06 — page-level preview state. Only one modal
+  // can be open at a time so a single piece of state is sufficient.
+  const [previewCaseId, setPreviewCaseId] = useState<string | null>(null)
+  const previewCase = useMemo(
+    () => cases.find((c) => c.caseId === previewCaseId) ?? null,
+    [cases, previewCaseId],
   )
 
   return (
@@ -96,11 +105,19 @@ function CasesView() {
               key={entry.caseId}
               entry={entry}
               onChange={updateCaseLabel}
-              onOpen={() => navigate(`/upload?case=${entry.caseId}`)}
+              onPreview={() => setPreviewCaseId(entry.caseId)}
+              onExtend={() => navigate(`/upload?case=${entry.caseId}`)}
             />
           ))}
         </ul>
       </section>
+
+      <PreviewModal
+        open={previewCaseId !== null}
+        caseId={previewCaseId}
+        docTypeLabel={docTypeLabel(previewCase?.docType ?? null)}
+        onClose={() => setPreviewCaseId(null)}
+      />
     </main>
   )
 }
@@ -108,11 +125,13 @@ function CasesView() {
 function CaseRow({
   entry,
   onChange,
-  onOpen,
+  onPreview,
+  onExtend,
 }: {
   entry: CaseListEntry
   onChange: (caseId: string, newDocType: string) => Promise<boolean>
-  onOpen: () => void
+  onPreview: () => void
+  onExtend: () => void
 }) {
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [revertedToast, setRevertedToast] = useState(false)
@@ -146,8 +165,9 @@ function CaseRow({
       >
         <button
           type="button"
-          onClick={onOpen}
-          className="flex flex-col items-start gap-1 text-left"
+          onClick={onPreview}
+          aria-label={`Preview ${typeLabel}`}
+          className="flex flex-col items-start gap-1 rounded-xl text-left transition-colors hover:bg-pc-bg/60"
         >
           <div className="text-pc-body font-semibold text-pc-text">
             {typeLabel}
@@ -161,10 +181,20 @@ function CaseRow({
             >
               {isConfirmed ? `✔ ${statusLabel}` : statusLabel}
             </span>
+            <span aria-hidden="true" className="ml-1 text-pc-text-muted">
+              · Tap to view
+            </span>
           </div>
         </button>
 
-        <div className="flex justify-end">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onExtend}
+            className="text-pc-caption font-medium text-pc-navy underline hover:text-pc-navy-hover"
+          >
+            + Add more pages
+          </button>
           <Button variant="secondary" onClick={() => setOverrideOpen(true)}>
             Change
           </Button>
