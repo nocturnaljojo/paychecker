@@ -140,6 +140,7 @@ function CasesView() {
             : undefined
         }
         suppressEscape={overrideFromPreviewCaseId !== null}
+        isOverlayOpen={overrideFromPreviewCaseId !== null}
       />
 
       {/*

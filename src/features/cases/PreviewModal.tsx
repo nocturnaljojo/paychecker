@@ -40,6 +40,15 @@ type PreviewModalProps = {
   onChangeType?: () => void
   /** Set true while a sibling modal is layered above; pauses Esc. */
   suppressEscape?: boolean
+  /**
+   * Sprint M0.5-BUILD-08 — when true, the document image dims to
+   * opacity-70 so the worker's attention shifts to the layered
+   * modal's selector. Header buttons + non-image content stay at
+   * full opacity (still tappable, still readable). 70 is per
+   * ChatGPT V2: 50 was too dark for ESL workers to recognize the
+   * doc as context.
+   */
+  isOverlayOpen?: boolean
 }
 
 export function PreviewModal({
@@ -49,6 +58,7 @@ export function PreviewModal({
   onClose,
   onChangeType,
   suppressEscape = false,
+  isOverlayOpen = false,
 }: PreviewModalProps) {
   const { documents, isLoading, hasError } = useDocumentPreview(
     open ? caseId : null,
@@ -131,7 +141,11 @@ export function PreviewModal({
             <ul className="mx-auto flex max-w-2xl flex-col gap-4">
               {documents.map((doc, index) => (
                 <li key={doc.documentId}>
-                  <DocumentPreview doc={doc} pageNumber={index + 1} />
+                  <DocumentPreview
+                    doc={doc}
+                    pageNumber={index + 1}
+                    isOverlayOpen={isOverlayOpen}
+                  />
                 </li>
               ))}
             </ul>
@@ -145,9 +159,11 @@ export function PreviewModal({
 function DocumentPreview({
   doc,
   pageNumber,
+  isOverlayOpen,
 }: {
   doc: PreviewableDocument
   pageNumber: number
+  isOverlayOpen: boolean
 }) {
   if (doc.errorMessage || !doc.signedUrl) {
     return (
@@ -159,7 +175,13 @@ function DocumentPreview({
 
   if (doc.mimeType.startsWith('image/')) {
     return (
-      <figure className="overflow-hidden rounded-2xl border border-pc-border bg-pc-surface">
+      <figure
+        className={cn(
+          'overflow-hidden rounded-2xl border border-pc-border bg-pc-surface',
+          'transition-opacity duration-200',
+          isOverlayOpen ? 'opacity-70' : 'opacity-100',
+        )}
+      >
         <img
           src={doc.signedUrl}
           alt={`Page ${pageNumber}`}

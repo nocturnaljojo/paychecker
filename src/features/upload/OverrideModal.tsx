@@ -78,7 +78,7 @@ export function OverrideModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="What is this?"
+      aria-label="What is this document?"
       className="fixed inset-0 z-50"
     >
       {/* Backdrop */}
@@ -98,7 +98,7 @@ export function OverrideModal({
       >
         <div className="flex items-start justify-between">
           <h2 className="text-pc-h2 font-semibold text-pc-text">
-            What is this?
+            What is this document?
           </h2>
           <button
             type="button"
