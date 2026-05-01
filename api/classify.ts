@@ -303,6 +303,29 @@ async function handler(request: Request): Promise<Response> {
   const classificationId = classificationInsert.data.id as string
   console.log(`[classify] inserted classification_id=${classificationId}`)
 
+  // ADR-014 / Sprint M0.5-BUILD-01: create or attach a document_case for this
+  // document via the classify_with_case() RPC (Migration 0014). Atomic INSERT
+  // case + UPDATE documents.case_id in one Postgres transaction → no orphan
+  // case rows if the linkage fails. Idempotent if already linked.
+  //
+  // Case creation is supplementary to classification: if the RPC fails, the
+  // existing pipeline still returns a normal ClassifyOutput so the worker
+  // is never blocked. The UI degrades to pre-BUILD-01 behaviour for that doc.
+  const caseDocType = routingStatus === 'failed'
+    ? 'other'
+    : (TYPE_TO_BUCKET[detectedType] ?? 'other')
+  const caseRpc = await supabase.rpc('classify_with_case', {
+    p_document_id: doc.id,
+    p_worker_id: workerId,
+    p_doc_type: caseDocType,
+    p_completion_status: 'suggested',
+  })
+  if (caseRpc.error) {
+    console.error(`[classify] case_rpc_error document_id=${doc.id} message=${caseRpc.error.message}`)
+  } else {
+    console.log(`[classify] case_created case_id=${caseRpc.data} doc_type=${caseDocType} completion_status=suggested`)
+  }
+
   // Failed routing — update state but don't move storage.
   if (routingStatus === 'failed') {
     await supabase

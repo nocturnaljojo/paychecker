@@ -74,7 +74,7 @@
 | `architecture/prompts/` | 6 prompt template skeletons (classify + 5 bucket extracts); Sprint B2 fills production copy. |
 | `architecture/integration-plan-v01.md` | Where new concepts (Calc Explanation / Worker Context / Sentiment) plug into the existing pipeline (Sprint INTEG-001). Adds Sprint E design constraint. ADR placeholders renumbered 2026-05-01 → ADR-015/016/017. |
 | `document-case-paradigm-v01.md` | Document-case paradigm (ChatGPT critique 2026-05-01); ratified as ADR-014 in Sprint UX-FLOW-AUDIT. Design/critique trail. |
-| `planning/M0.5-spec.md` | M0.5 sub-phase spec — Migration 0012 schema + `api/classify.ts` shape change + UI acceptance criteria. Locked 2026-05-01; SQL applied at M0.5-BUILD-01 sprint start. |
+| `planning/M0.5-spec.md` | M0.5 sub-phase spec — Migration 0014 schema (originally drafted as 0012 — actual slot was 0014) + `api/classify.ts` RPC shape + UI acceptance criteria. Applied 2026-05-01 in M0.5-BUILD-01. |
 
 ### ADRs
 

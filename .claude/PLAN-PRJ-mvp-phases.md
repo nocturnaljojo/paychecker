@@ -36,7 +36,7 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` complete · `[!]` blocked
 
 **Scope (Option B — minimum-with-cases, locked):**
 
-- [ ] Migration 0012 — `document_cases` table + `documents.case_id` FK (per `docs/planning/M0.5-spec.md`)
+- [x] Migration 0014 — `document_cases` table + `documents.case_id` FK (applied 2026-05-01 in M0.5-BUILD-01; reserved as 0012 in spec docs but actual slot is 0014)
 - [ ] Update `api/classify.ts` to accept array of `document_id`s; falls back to per-image when array length = 1
 - [ ] `/upload` page redesigned: upload zone + inline case-card list
 - [ ] Case-card UI: `✔ Yes` / `✏ Change` + 5-bucket override (Contract / Payslip / Bank / Super / Other)

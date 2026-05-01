@@ -14,6 +14,11 @@ import { cn } from '@/lib/utils'
 import { ACCEPTED_MIME_TYPES } from '@/lib/upload'
 import { useUploadBatch, type FileEntry, type FileStatus } from './useUploadBatch'
 import { useClassifyBatch, type ClassifyStatus } from './useClassifyBatch'
+import {
+  useCaseFeedback,
+  formatDocTypeLabel,
+  type CaseEntry,
+} from './useCaseFeedback'
 
 const ACCEPT_ATTR = ACCEPTED_MIME_TYPES.join(',')
 
@@ -122,6 +127,35 @@ export function UploadZone() {
       counts.failed > 0 ||
       counts.consent_required > 0)
   const consentRequiredCount = counts.consent_required
+
+  // ADR-014 / Sprint M0.5-BUILD-01 — collect document IDs whose classify
+  // pass has finished, so the case-feedback hook can read their cases.
+  // Cases are created server-side (api/classify.ts → classify_with_case
+  // RPC) once classification is determined; we wait for that signal here.
+  const settledDocumentIds = useMemo(() => {
+    const ids: string[] = []
+    for (const f of uploadState.files) {
+      const docId =
+        f.status === 'uploaded'
+          ? f.documentId
+          : f.status === 'duplicate'
+            ? f.existingDocumentId
+            : undefined
+      if (!docId) continue
+      const ce = classifyEntries.find((c) => c.documentId === docId)
+      if (
+        ce &&
+        (ce.status === 'auto_routed' ||
+          ce.status === 'review_pending' ||
+          ce.status === 'failed')
+      ) {
+        ids.push(docId)
+      }
+    }
+    return ids
+  }, [uploadState.files, classifyEntries])
+
+  const { cases, readyCount, confirmCase } = useCaseFeedback(settledDocumentIds)
 
   return (
     <main className="flex min-h-screen flex-col bg-pc-bg text-pc-text">
@@ -273,7 +307,19 @@ export function UploadZone() {
           </section>
         )}
 
-        {allClassified && (
+        {allClassified && cases.length > 0 && (
+          <CaseFeedbackPanel
+            cases={cases}
+            readyCount={readyCount}
+            onConfirm={confirmCase}
+            onContinue={() => navigate('/dashboard')}
+          />
+        )}
+
+        {allClassified && cases.length === 0 && (
+          // Fallback for the rare case where classify succeeded but the
+          // case RPC failed (logged server-side as case_rpc_error). Worker
+          // is never blocked — same Continue path as before.
           <section className="mt-6 rounded-2xl border border-pc-border bg-pc-sage-soft p-4">
             <div className="text-pc-body font-medium text-pc-text">
               {counts.review_pending > 0
@@ -283,11 +329,7 @@ export function UploadZone() {
                   : 'All set'}
             </div>
             <p className="mt-1 text-pc-caption text-pc-text">
-              {counts.review_pending > 0
-                ? `${counts.review_pending} document${counts.review_pending === 1 ? '' : 's'} need a quick check before we save them.`
-                : counts.failed > 0
-                  ? 'You can re-upload, or enter your details manually below.'
-                  : 'We saved your documents. Reading the values is the next step.'}
+              We saved your documents. Reading the values is the next step.
             </p>
             <div className="mt-3">
               <Button variant="primary" onClick={() => navigate('/dashboard')}>
@@ -472,4 +514,121 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+// ─────────────────────────────────────────────────────────────────
+// CaseFeedbackPanel — Sprint M0.5-BUILD-01.
+//
+// First user-visible product moment after ADR-014 ratification: replaces
+// the generic "All set" pill with case-specific feedback that names what
+// the system understood ("Type: Contract (suggested)") and gives the
+// worker a confirm-or-change affordance.
+//
+// Per docs/planning/M0.5-ui-spec-v01.md PART 5.6 (Confirmed state) and
+// the BUILD-01 brief — the [Change] override flow ships in BUILD-02/03;
+// in BUILD-01 it's a placeholder toast.
+// ─────────────────────────────────────────────────────────────────
+
+function CaseFeedbackPanel({
+  cases,
+  readyCount,
+  onConfirm,
+  onContinue,
+}: {
+  cases: CaseEntry[]
+  readyCount: number
+  onConfirm: (caseId: string) => Promise<boolean>
+  onContinue: () => void
+}) {
+  return (
+    <section className="mt-6 flex flex-col gap-3">
+      <div className="rounded-2xl border border-pc-border bg-pc-sage-soft p-4">
+        <div className="text-pc-body font-medium text-pc-text">
+          ✔ {cases.length === 1 ? 'You added a paper' : `You added ${cases.length} papers`}
+        </div>
+        <p className="mt-1 text-pc-caption text-pc-text">
+          {readyCount === 1 ? '1 paper ready' : `${readyCount} papers ready`}
+        </p>
+      </div>
+
+      {cases.map((c) => (
+        <CaseCard key={c.caseId} entry={c} onConfirm={onConfirm} />
+      ))}
+
+      <div>
+        <Button variant="secondary" onClick={onContinue}>
+          Continue
+        </Button>
+      </div>
+    </section>
+  )
+}
+
+function CaseCard({
+  entry,
+  onConfirm,
+}: {
+  entry: CaseEntry
+  onConfirm: (caseId: string) => Promise<boolean>
+}) {
+  const [pending, setPending] = useState(false)
+  const [showChangeToast, setShowChangeToast] = useState(false)
+
+  const isConfirmed = entry.completionStatus === 'confirmed'
+  const typeLabel = formatDocTypeLabel(entry.docType)
+
+  const handleLooksRight = useCallback(async () => {
+    setPending(true)
+    await onConfirm(entry.caseId)
+    setPending(false)
+  }, [entry.caseId, onConfirm])
+
+  const handleChange = useCallback(() => {
+    setShowChangeToast(true)
+    window.setTimeout(() => setShowChangeToast(false), 2500)
+  }, [])
+
+  return (
+    <div className="rounded-2xl border border-pc-border bg-pc-surface p-4">
+      <div className="text-pc-caption text-pc-text-muted">Type:</div>
+      <div className="mt-0.5 text-pc-h2 font-semibold text-pc-text">
+        {typeLabel}
+        {!isConfirmed && (
+          <span className="ml-2 align-middle text-pc-caption font-normal text-pc-text-muted">
+            (suggested)
+          </span>
+        )}
+        {isConfirmed && (
+          <span className="ml-2 align-middle text-pc-caption font-normal text-pc-sage">
+            ✔ confirmed
+          </span>
+        )}
+      </div>
+
+      {!isConfirmed && (
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button
+            variant="primary"
+            block
+            onClick={handleLooksRight}
+            disabled={pending}
+          >
+            {pending ? 'Saving…' : 'Looks right'}
+          </Button>
+          <Button variant="secondary" block onClick={handleChange}>
+            Change
+          </Button>
+        </div>
+      )}
+
+      {showChangeToast && (
+        <div
+          role="status"
+          className="mt-3 rounded-xl border border-pc-amber-soft bg-pc-amber-soft px-3 py-2 text-pc-caption text-pc-text"
+        >
+          Coming soon — will let you change the type next.
+        </div>
+      )}
+    </div>
+  )
 }
