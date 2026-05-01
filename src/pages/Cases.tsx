@@ -15,6 +15,8 @@ import { IdentityIndicator } from '@/components/IdentityIndicator'
 /**
  * Sprint M0.5-BUILD-04 — /cases route ("Your papers").
  * Updated in Sprint M0.5-BUILD-06 — tap-to-preview wired in.
+ * Updated in Sprint M0.5-BUILD-07 — "Change type" inside preview +
+ * "(not sure yet)" hint on unconfirmed Other cases.
  *
  * Worker can navigate here from /dashboard ("Your papers" header link)
  * to see their entire case history, override any misclassification,
@@ -28,6 +30,8 @@ import { IdentityIndicator } from '@/components/IdentityIndicator'
  *   - Tap card body         → PreviewModal (BUILD-06)
  *   - Tap [Change]          → OverrideModal (BUILD-04 optimistic UI)
  *   - Tap [+ Add more pages] → /upload?case={case_id} (extend)
+ *   - Inside preview: [Change type] → OverrideModal layered on top
+ *     (BUILD-07; preview stays open so the new label is visible)
  *
  * NO filters, search, sort options, pagination, delete, or archive in
  * M0.5 per BUILD-04 hard-stop rule.
@@ -58,6 +62,19 @@ function CasesView() {
     () => cases.find((c) => c.caseId === previewCaseId) ?? null,
     [cases, previewCaseId],
   )
+
+  // Sprint M0.5-BUILD-07 — override layered on top of preview. Tracks
+  // which case the worker is re-labelling from inside the preview
+  // modal. Independent from the per-row Change button; resolves the
+  // SEE → THINK → ACT flow gap.
+  const [overrideFromPreviewCaseId, setOverrideFromPreviewCaseId] =
+    useState<string | null>(null)
+  const overrideFromPreviewCase = useMemo(
+    () =>
+      cases.find((c) => c.caseId === overrideFromPreviewCaseId) ?? null,
+    [cases, overrideFromPreviewCaseId],
+  )
+  const [previewToast, setPreviewToast] = useState<string | null>(null)
 
   return (
     <main className="min-h-screen bg-pc-bg text-pc-text">
@@ -117,7 +134,45 @@ function CasesView() {
         caseId={previewCaseId}
         docTypeLabel={docTypeLabel(previewCase?.docType ?? null)}
         onClose={() => setPreviewCaseId(null)}
+        onChangeType={
+          previewCase
+            ? () => setOverrideFromPreviewCaseId(previewCase.caseId)
+            : undefined
+        }
+        suppressEscape={overrideFromPreviewCaseId !== null}
       />
+
+      {/*
+        Layered override above the preview. Rendered AFTER PreviewModal
+        in the JSX so equal z-index resolves in this modal's favour
+        (it paints on top). On select: optimistic update fires, this
+        modal closes, preview stays open and re-renders with the new
+        label because previewCase derives from the live cases array.
+      */}
+      <OverrideModal
+        open={overrideFromPreviewCaseId !== null}
+        currentDocType={overrideFromPreviewCase?.docType ?? null}
+        onSelect={async (newType) => {
+          const target = overrideFromPreviewCaseId
+          setOverrideFromPreviewCaseId(null)
+          if (!target) return
+          const ok = await updateCaseLabel(target, newType)
+          if (!ok) {
+            setPreviewToast("Couldn't save that — try again.")
+            window.setTimeout(() => setPreviewToast(null), 3000)
+          }
+        }}
+        onClose={() => setOverrideFromPreviewCaseId(null)}
+      />
+
+      {previewToast && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl border border-pc-amber-soft bg-pc-amber-soft px-4 py-2 text-pc-caption text-pc-text shadow-pc-modal"
+        >
+          {previewToast}
+        </div>
+      )}
     </main>
   )
 }
@@ -140,6 +195,15 @@ function CaseRow({
   const typeLabel = docTypeLabel(entry.docType)
   const statusLabel = completionStatusLabel(entry.completionStatus)
   const pageLabel = entry.pageCount === 1 ? '1 page' : `${entry.pageCount} pages`
+
+  // Sprint M0.5-BUILD-07 — show "(not sure yet)" only when the
+  // classifier defaulted to Other AND the worker hasn't confirmed
+  // it yet. A worker who explicitly chose Other has confirmed
+  // status and gets no hint — they meant Other.
+  const isUnsureOther =
+    entry.docType === 'other' &&
+    (entry.completionStatus === 'suggested' ||
+      entry.completionStatus === 'draft')
 
   const handleSelect = useCallback(
     async (newDocType: string) => {
@@ -171,6 +235,11 @@ function CaseRow({
         >
           <div className="text-pc-body font-semibold text-pc-text">
             {typeLabel}
+            {isUnsureOther && (
+              <span className="ml-2 text-pc-caption font-normal text-pc-text-muted">
+                (not sure yet)
+              </span>
+            )}
           </div>
           <div className="text-pc-caption text-pc-text-muted">
             {pageLabel} ·{' '}
@@ -179,7 +248,11 @@ function CaseRow({
                 isConfirmed ? 'text-pc-sage' : 'text-pc-text-muted',
               )}
             >
-              {isConfirmed ? `✔ ${statusLabel}` : statusLabel}
+              {isConfirmed
+                ? `✔ ${statusLabel}`
+                : isUnsureOther
+                  ? 'Not sure yet'
+                  : statusLabel}
             </span>
             <span aria-hidden="true" className="ml-1 text-pc-text-muted">
               · Tap to view

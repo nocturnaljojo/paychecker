@@ -7,7 +7,7 @@ import {
 } from './useDocumentPreview'
 
 /**
- * PreviewModal — Sprint M0.5-BUILD-06.
+ * PreviewModal — Sprint M0.5-BUILD-06; extended in BUILD-07.
  *
  * Full-screen modal that shows all documents linked to a case so the
  * worker can verify what they're labelling. Per BUILD-06 hard-stop
@@ -20,6 +20,15 @@ import {
  * Per ChatGPT round 5 critique: "preview is not a feature — preview is
  * permission to think." The job here is verification, not display
  * polish.
+ *
+ * Sprint M0.5-BUILD-07 — onChangeType prop added so the worker can
+ * fix a misclassification in the same gesture as verifying it (the
+ * SEE → THINK → ACT pattern). The override modal is composed by the
+ * parent, NOT duplicated inside this component.
+ *
+ * Esc handling: when the parent renders OverrideModal on top, it must
+ * pass `suppressEscape={true}` so Esc closes the override layer first
+ * rather than dropping the worker all the way out of preview.
  */
 
 type PreviewModalProps = {
@@ -27,6 +36,10 @@ type PreviewModalProps = {
   caseId: string | null
   docTypeLabel: string
   onClose: () => void
+  /** When provided, renders a "Change type" button in the header. */
+  onChangeType?: () => void
+  /** Set true while a sibling modal is layered above; pauses Esc. */
+  suppressEscape?: boolean
 }
 
 export function PreviewModal({
@@ -34,6 +47,8 @@ export function PreviewModal({
   caseId,
   docTypeLabel,
   onClose,
+  onChangeType,
+  suppressEscape = false,
 }: PreviewModalProps) {
   const { documents, isLoading, hasError } = useDocumentPreview(
     open ? caseId : null,
@@ -49,13 +64,13 @@ export function PreviewModal({
   }, [open])
 
   useEffect(() => {
-    if (!open) return
+    if (!open || suppressEscape) return
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, onClose, suppressEscape])
 
   if (!open) return null
 
@@ -74,15 +89,20 @@ export function PreviewModal({
       />
 
       <div className="absolute inset-0 flex flex-col bg-pc-bg">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-pc-border bg-pc-bg px-5 py-3.5">
-          <h2 className="truncate text-pc-h2 font-semibold text-pc-text">
+        <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-pc-border bg-pc-bg px-5 py-3.5">
+          <h2 className="min-w-0 flex-1 truncate text-pc-h2 font-semibold text-pc-text">
             {docTypeLabel}
           </h2>
+          {onChangeType && (
+            <Button variant="secondary" onClick={onChangeType}>
+              Change type
+            </Button>
+          )}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="ml-3 shrink-0 rounded-full p-2 text-pc-text-muted hover:bg-pc-border hover:text-pc-text"
+            className="shrink-0 rounded-full p-2 text-pc-text-muted hover:bg-pc-border hover:text-pc-text"
           >
             ✕
           </button>
