@@ -23,6 +23,7 @@ import { OverrideModal } from './OverrideModal'
 import { completionStatusLabel, docTypeLabel } from '@/features/cases/vocabulary'
 import { useSupabaseClient } from '@/lib/supabase'
 import { IdentityIndicator } from '@/components/IdentityIndicator'
+import { PreviewModal } from '@/features/cases/PreviewModal'
 
 const ACCEPT_ATTR = ACCEPTED_MIME_TYPES.join(',')
 
@@ -172,6 +173,29 @@ export function UploadZone() {
 
   const { cases, readyCount, confirmCase, updateCaseLabel } =
     useCaseFeedback(settledDocumentIds)
+
+  // Sprint M0.5-BUILD-09 — uncertainty signal for the failure-guidance UI.
+  // Frontend has no `confidence` value (api/classify.ts doesn't return it
+  // and we're not changing that), but the existing classify status already
+  // encodes the same intent: `review_pending` is what the server emits
+  // when confidence falls below the auto-route threshold. Combined with
+  // a docType of 'other' (the classifier's "I don't know" default), that
+  // gives us the same OR'd uncertainty signal the spec asks for, without
+  // touching the backend or adding a new flag.
+  const uncertainCaseIds = useMemo(() => {
+    const out = new Set<string>()
+    if (cases.length === 0) return out
+    const classifyByDoc = new Map(
+      classifyEntries.map((c) => [c.documentId, c]),
+    )
+    for (const c of cases) {
+      const ce = classifyByDoc.get(c.documentId)
+      const reviewPending = ce?.status === 'review_pending'
+      const isOther = c.docType === 'other'
+      if (reviewPending || isOther) out.add(c.caseId)
+    }
+    return out
+  }, [cases, classifyEntries])
 
   // Sprint M0.5-BUILD-04 — Issue 1 fix: once a document's case has
   // flipped to 'confirmed', hide its file-row pill. The case panel is
@@ -448,6 +472,7 @@ export function UploadZone() {
             pageCountByCase={pageCountByCase}
             isExtending={!!extendingCaseId}
             extendingDocType={extendingCase?.docType ?? null}
+            uncertainCaseIds={uncertainCaseIds}
             onConfirm={confirmCase}
             onChange={updateCaseLabel}
             onAddMorePages={handleAddMorePages}
@@ -713,6 +738,7 @@ function CaseFeedbackPanel({
   pageCountByCase,
   isExtending,
   extendingDocType,
+  uncertainCaseIds,
   onConfirm,
   onChange,
   onAddMorePages,
@@ -723,6 +749,7 @@ function CaseFeedbackPanel({
   pageCountByCase: Record<string, number>
   isExtending: boolean
   extendingDocType: string | null
+  uncertainCaseIds: Set<string>
   onConfirm: (caseId: string) => Promise<boolean>
   onChange: (caseId: string, newDocType: string) => Promise<boolean>
   onAddMorePages: (caseId: string) => void
@@ -770,6 +797,7 @@ function CaseFeedbackPanel({
         <CaseCard
           key={c.caseId}
           entry={c}
+          isUncertain={uncertainCaseIds.has(c.caseId)}
           onConfirm={onConfirm}
           onChange={onChange}
           onAddMorePages={onAddMorePages}
@@ -787,22 +815,29 @@ function CaseFeedbackPanel({
 
 function CaseCard({
   entry,
+  isUncertain,
   onConfirm,
   onChange,
   onAddMorePages,
 }: {
   entry: CaseEntry
+  isUncertain: boolean
   onConfirm: (caseId: string) => Promise<boolean>
   onChange: (caseId: string, newDocType: string) => Promise<boolean>
   onAddMorePages: (caseId: string) => void
 }) {
   const [pending, setPending] = useState(false)
   const [overrideOpen, setOverrideOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
   const [revertedToast, setRevertedToast] = useState(false)
 
   const isConfirmed = entry.completionStatus === 'confirmed'
   const typeLabel = formatDocTypeLabel(entry.docType)
   const statusLabel = completionStatusLabel(entry.completionStatus)
+  // Guidance UI shows when AI was uncertain AND the worker hasn't yet
+  // weighed in. Once they confirm or override, the card returns to its
+  // normal "Saved" rendering. Same SEE → THINK → ACT pattern as /cases.
+  const showGuidance = isUncertain && !isConfirmed
 
   const handleLooksRight = useCallback(async () => {
     setPending(true)
@@ -829,6 +864,71 @@ function CaseCard({
     },
     [entry.caseId, onChange],
   )
+
+  if (showGuidance) {
+    // Sprint M0.5-BUILD-09 — failure guidance UI. Same SEE → THINK → ACT
+    // pattern as the correction loop, applied to AI-uncertain uploads.
+    // Reuses PreviewModal + OverrideModal — no new modals, no backend
+    // changes. The card replaces the normal Looks right / Change pair
+    // until the worker decides; then optimistic update flips status to
+    // 'confirmed', showGuidance turns false, and the normal confirmed
+    // card renders below.
+    return (
+      <div className="rounded-2xl border border-pc-amber-soft bg-pc-amber-soft p-4">
+        <div className="text-pc-body font-semibold text-pc-text">
+          ⚠ Couldn't read this clearly
+        </div>
+        <p className="mt-1 text-pc-caption text-pc-text">
+          Help me out — what is this document?
+        </p>
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Button variant="secondary" block onClick={() => setPreviewOpen(true)}>
+            View document
+          </Button>
+          <Button variant="primary" block onClick={() => setOverrideOpen(true)}>
+            Choose type
+          </Button>
+        </div>
+
+        <div className="mt-3 border-t border-pc-border pt-3">
+          <button
+            type="button"
+            onClick={() => onAddMorePages(entry.caseId)}
+            className="text-pc-caption font-medium text-pc-navy underline hover:text-pc-navy-hover"
+          >
+            + Add more pages
+          </button>
+        </div>
+
+        {revertedToast && (
+          <div
+            role="status"
+            className="mt-3 rounded-xl border border-pc-coral-soft bg-pc-coral-soft px-3 py-2 text-pc-caption text-pc-text"
+          >
+            Couldn't save that — try again.
+          </div>
+        )}
+
+        <PreviewModal
+          open={previewOpen}
+          caseId={entry.caseId}
+          docTypeLabel={typeLabel}
+          onClose={() => setPreviewOpen(false)}
+          onChangeType={() => setOverrideOpen(true)}
+          suppressEscape={overrideOpen}
+          isOverlayOpen={overrideOpen}
+        />
+
+        <OverrideModal
+          open={overrideOpen}
+          currentDocType={entry.docType}
+          onSelect={handleOverrideSelect}
+          onClose={() => setOverrideOpen(false)}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-2xl border border-pc-border bg-pc-surface p-4">
