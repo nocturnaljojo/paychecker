@@ -413,20 +413,34 @@ async function failExtraction(
   reason: string,
 ): Promise<Response> {
   console.error(`[extract] payslip_failed document_id=${documentId} reason=${reason}`)
-  await supabase.from('payslip_facts').insert({
-    worker_id: workerId,
-    employer_id: null,
-    source_doc_id: documentId,
-    case_id: caseId ?? null,
-    provenance: 'ocr_suggested',
-    extraction_status: 'failed',
-    extracted_at: new Date().toISOString(),
-    extraction_jsonb: {
-      model: EXTRACTOR_MODEL,
-      prompt_version: EXTRACTOR_PROMPT_VERSION,
-      error: reason,
-    },
-  })
+  // BUILD-11.5: explicitly check the insert result. Previously this
+  // call was awaited but its .error was never inspected, so a CHECK
+  // violation (or any other DB error) silently swallowed the failure
+  // row — leaving the UI polling for a state that could never arrive.
+  const insertResult = await supabase
+    .from('payslip_facts')
+    .insert({
+      worker_id: workerId,
+      employer_id: null,
+      source_doc_id: documentId,
+      case_id: caseId ?? null,
+      provenance: 'ocr_suggested',
+      extraction_status: 'failed',
+      extracted_at: new Date().toISOString(),
+      extraction_jsonb: {
+        model: EXTRACTOR_MODEL,
+        prompt_version: EXTRACTOR_PROMPT_VERSION,
+        error: reason,
+      },
+    })
+    .select('id')
+    .single()
+  if (insertResult.error) {
+    console.error(
+      `[extract] failure_row_insert_error document_id=${documentId} message=${insertResult.error.message}`,
+    )
+    return jsonResponse(500, { error: insertResult.error.message })
+  }
   return jsonResponse(200, {
     status: 'failed',
     document_id: documentId,
