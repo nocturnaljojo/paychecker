@@ -3,6 +3,12 @@ import { useSupabaseClient } from '@/lib/supabase'
 
 /**
  * Sprint M0.5-BUILD-11 — payslip-facts read hook.
+ * Sprint M0.5-BUILD-11.6 — exposes employer_name + earnings[] from
+ *   extraction_jsonb.raw (no schema change).
+ * Sprint M0.5-BUILD-12 — adds updateReportedHours mutation so the
+ *   worker can correct the flat hours field. Audit trigger
+ *   (log_psf_history) handles history-row insert + confirmed_at
+ *   reset semantics — no app-side handling required.
  *
  * Reads payslip_facts rows linked to a case via worker RLS. Singleton
  * case-per-upload in M0.5, but the table allows multiple rows per case
@@ -31,10 +37,26 @@ export type PayslipFactExtractionStatus =
   | 'confirmed'
   | 'failed'
 
+export type EarningsLineType =
+  | 'ordinary'
+  | 'penalty'
+  | 'overtime'
+  | 'allowance'
+  | 'other'
+
+export type EarningsLine = {
+  type: EarningsLineType
+  label: string | null
+  hours: number | null
+  rate: number | null
+  amount: number | null
+}
+
 export type PayslipFact = {
   id: string
   caseId: string | null
   sourceDocId: string | null
+  employerName: string | null
   payDate: string | null
   periodStart: string | null
   periodEnd: string | null
@@ -44,6 +66,7 @@ export type PayslipFact = {
   reportedHours: number | null
   hourlyRate: number | null
   taxWithheld: number | null
+  earnings: EarningsLine[]
   extractionStatus: PayslipFactExtractionStatus
   extractedAt: string | null
   confirmedAt: string | null
@@ -65,6 +88,7 @@ type Row = {
   extraction_status: PayslipFactExtractionStatus
   extracted_at: string | null
   confirmed_at: string | null
+  extraction_jsonb: { raw?: { employer_name?: unknown; earnings?: unknown } } | null
 }
 
 export type UsePayslipFactsState = {
@@ -74,6 +98,7 @@ export type UsePayslipFactsState = {
   isPolling: boolean
   refetch: () => Promise<void>
   confirmFact: () => Promise<boolean>
+  updateReportedHours: (hours: number) => Promise<boolean>
 }
 
 const POLL_INTERVAL_MS = 2500
@@ -102,7 +127,7 @@ export function usePayslipFacts(caseId: string | null): UsePayslipFactsState {
       .select(
         'id, case_id, source_doc_id, pay_date, period_start, period_end, ' +
           'gross_pay, net_pay, super_amount, ordinary_hours, ordinary_rate, ' +
-          'tax, extraction_status, extracted_at, confirmed_at',
+          'tax, extraction_status, extracted_at, confirmed_at, extraction_jsonb',
       )
       .eq('case_id', caseId)
       .order('extracted_at', { ascending: false, nullsFirst: false })
@@ -124,6 +149,7 @@ export function usePayslipFacts(caseId: string | null): UsePayslipFactsState {
       id: r.id,
       caseId: r.case_id,
       sourceDocId: r.source_doc_id,
+      employerName: parseEmployerName(r.extraction_jsonb),
       payDate: r.pay_date,
       periodStart: r.period_start,
       periodEnd: r.period_end,
@@ -133,6 +159,7 @@ export function usePayslipFacts(caseId: string | null): UsePayslipFactsState {
       reportedHours: r.ordinary_hours,
       hourlyRate: r.ordinary_rate,
       taxWithheld: r.tax,
+      earnings: parseEarnings(r.extraction_jsonb),
       extractionStatus: r.extraction_status,
       extractedAt: r.extracted_at,
       confirmedAt: r.confirmed_at,
@@ -202,6 +229,27 @@ export function usePayslipFacts(caseId: string | null): UsePayslipFactsState {
     return true
   }, [fact, supabase, fetchOnce])
 
+  // BUILD-12 — minimal edit. The audit trigger from migration 0010
+  // (log_psf_history) inspects ordinary_hours via IS DISTINCT FROM, so
+  // an UPDATE that changes this column triggers a history insert and,
+  // if the row was confirmed, resets confirmed_at to NULL (worker
+  // re-confirms after editing — ADR-012 invariant).
+  const updateReportedHours = useCallback(
+    async (hours: number): Promise<boolean> => {
+      if (!fact) return false
+      const result = await supabase
+        .from('payslip_facts')
+        .update({ ordinary_hours: hours })
+        .eq('id', fact.id)
+      if (result.error) {
+        return false
+      }
+      await fetchOnce()
+      return true
+    },
+    [fact, supabase, fetchOnce],
+  )
+
   return {
     fact,
     isLoading,
@@ -209,5 +257,55 @@ export function usePayslipFacts(caseId: string | null): UsePayslipFactsState {
     isPolling,
     refetch: fetchOnce,
     confirmFact,
+    updateReportedHours,
   }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// extraction_jsonb.raw parsers — defensive, return safe defaults
+// when the model returned a v01-shape response or a malformed shape.
+// ─────────────────────────────────────────────────────────────────
+
+function parseEmployerName(
+  jsonb: Row['extraction_jsonb'] | null | undefined,
+): string | null {
+  const raw = jsonb?.raw
+  if (!raw || typeof raw !== 'object') return null
+  const value = (raw as { employer_name?: unknown }).employer_name
+  return typeof value === 'string' && value.trim().length > 0
+    ? value.trim()
+    : null
+}
+
+function parseEarnings(
+  jsonb: Row['extraction_jsonb'] | null | undefined,
+): EarningsLine[] {
+  const raw = jsonb?.raw
+  if (!raw || typeof raw !== 'object') return []
+  const arr = (raw as { earnings?: unknown }).earnings
+  if (!Array.isArray(arr)) return []
+  return arr.flatMap((entry): EarningsLine[] => {
+    if (!entry || typeof entry !== 'object') return []
+    const e = entry as Record<string, unknown>
+    const type = isEarningsType(e.type) ? e.type : 'other'
+    return [
+      {
+        type,
+        label: typeof e.label === 'string' ? e.label : null,
+        hours: typeof e.hours === 'number' ? e.hours : null,
+        rate: typeof e.rate === 'number' ? e.rate : null,
+        amount: typeof e.amount === 'number' ? e.amount : null,
+      },
+    ]
+  })
+}
+
+function isEarningsType(v: unknown): v is EarningsLineType {
+  return (
+    v === 'ordinary' ||
+    v === 'penalty' ||
+    v === 'overtime' ||
+    v === 'allowance' ||
+    v === 'other'
+  )
 }

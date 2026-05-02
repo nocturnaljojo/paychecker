@@ -1,30 +1,37 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/Button'
 import {
   usePayslipFacts,
+  type EarningsLine,
   type PayslipFact,
 } from './usePayslipFacts'
 
 /**
  * Sprint M0.5-BUILD-11 — PayslipFactsCard.
+ * Sprint M0.5-BUILD-11.6 — copy: "Did we get these right?" → "Check
+ *   this matches your payslip"
+ * Sprint M0.5-BUILD-12 — structured visibility + minimal edit:
+ *   - Renders employer_name above the values
+ *   - Renders earnings[] line-item breakdown read-only
+ *   - Inline edit on Hours worked (single field, the wedge into
+ *     "user becomes authority" per fact-model intent)
  *
- * First user-visible surface of the extraction layer. Renders one of
- * four states based on payslip_facts.extraction_status:
- *
- *   pending   — "Reading your payslip…" + skeleton (extraction in flight)
- *   extracted — "We found these values" + confirm CTA
+ * State machine (driven by payslip_facts.extraction_status):
+ *   pending   — "Reading your payslip…" + skeleton
+ *   extracted — "We found these values" + breakdown + confirm CTA +
+ *               inline edit on Hours
  *   confirmed — read-only display with ✓
  *   failed    — "We couldn't read this clearly" + guidance
  *
- * Per BUILD-11 hard-stop:
- * - [Edit values] button is DISABLED with "Editing coming next" hint.
- *   No click handler — honest UI placeholder until BUILD-12.
- * - Null fields render as muted "not visible" — honest about what the
- *   model could and couldn't read.
- * - [Looks right] is disabled when DB integrity check would fail
- *   (period_start, period_end, gross_pay, net_pay all required for
- *   confirm per Migration 0009 CHECK).
+ * Architecture invariants preserved:
+ * - DB CHECK still enforces payslip_facts_confirmed_integrity:
+ *   period_start, period_end, gross_pay, net_pay all required for
+ *   confirm. UI disables [Looks right] when missing.
+ * - log_psf_history audit trigger handles edit-after-confirm:
+ *   editing a column resets confirmed_at to NULL automatically
+ *   (worker re-confirms). UI doesn't need to handle that here —
+ *   the next refetch sees the new state.
  */
 
 type Props = {
@@ -32,8 +39,14 @@ type Props = {
 }
 
 export function PayslipFactsCard({ caseId }: Props) {
-  const { fact, isLoading, hasError, isPolling, confirmFact } =
-    usePayslipFacts(caseId)
+  const {
+    fact,
+    isLoading,
+    hasError,
+    isPolling,
+    confirmFact,
+    updateReportedHours,
+  } = usePayslipFacts(caseId)
 
   if (!caseId) return null
 
@@ -50,8 +63,6 @@ export function PayslipFactsCard({ caseId }: Props) {
     )
   }
 
-  // Pending: either no row exists yet, or status='pending'.
-  // While polling we keep the same calm copy.
   const isPending =
     !fact || fact.extractionStatus === 'pending' || (isLoading && !fact)
 
@@ -92,20 +103,27 @@ export function PayslipFactsCard({ caseId }: Props) {
     return <ConfirmedCard fact={fact} />
   }
 
-  return <ExtractedCard fact={fact} confirmFact={confirmFact} />
+  return (
+    <ExtractedCard
+      fact={fact}
+      confirmFact={confirmFact}
+      updateReportedHours={updateReportedHours}
+    />
+  )
 }
 
 function ExtractedCard({
   fact,
   confirmFact,
+  updateReportedHours,
 }: {
   fact: PayslipFact
   confirmFact: () => Promise<boolean>
+  updateReportedHours: (hours: number) => Promise<boolean>
 }) {
   const [pending, setPending] = useState(false)
-  const [errorToast, setErrorToast] = useState(false)
+  const [errorToast, setErrorToast] = useState<string | null>(null)
 
-  // DB integrity (Migration 0009 CHECK): all four required for confirm.
   const canConfirm =
     fact.periodStart !== null &&
     fact.periodEnd !== null &&
@@ -117,18 +135,41 @@ function ExtractedCard({
     const ok = await confirmFact()
     setPending(false)
     if (!ok) {
-      setErrorToast(true)
-      window.setTimeout(() => setErrorToast(false), 3000)
+      setErrorToast("Couldn't save that — try again.")
+      window.setTimeout(() => setErrorToast(null), 3000)
     }
   }, [confirmFact])
 
+  const handleSaveHours = useCallback(
+    async (hours: number): Promise<boolean> => {
+      const ok = await updateReportedHours(hours)
+      if (!ok) {
+        setErrorToast("Couldn't save that — try again.")
+        window.setTimeout(() => setErrorToast(null), 3000)
+      }
+      return ok
+    },
+    [updateReportedHours],
+  )
+
   return (
     <div className="rounded-2xl border border-pc-border bg-pc-surface p-4">
+      {fact.employerName && (
+        <div className="mb-3 border-b border-pc-border pb-3">
+          <div className="text-pc-caption text-pc-text-muted">Employer</div>
+          <div className="mt-0.5 text-pc-body font-medium text-pc-text">
+            {fact.employerName}
+          </div>
+        </div>
+      )}
+
       <div className="text-pc-body font-medium text-pc-text">
         We found these values
       </div>
 
-      <FactRows fact={fact} />
+      <FactRows fact={fact} editableHours onSaveHours={handleSaveHours} />
+
+      <EarningsBreakdown earnings={fact.earnings} />
 
       {!canConfirm && (
         <p className="mt-3 text-pc-caption text-pc-amber">
@@ -141,7 +182,7 @@ function ExtractedCard({
         Check this matches your payslip
       </p>
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
+      <div className="mt-3">
         <Button
           variant="primary"
           block
@@ -150,14 +191,6 @@ function ExtractedCard({
         >
           {pending ? 'Saving…' : 'Looks right'}
         </Button>
-        <div className="flex flex-col gap-1">
-          <Button variant="secondary" block disabled>
-            Edit values
-          </Button>
-          <span className="text-center text-[11px] text-pc-text-muted">
-            Editing coming next
-          </span>
-        </div>
       </div>
 
       {errorToast && (
@@ -165,7 +198,7 @@ function ExtractedCard({
           role="status"
           className="mt-3 rounded-xl border border-pc-amber-soft bg-pc-amber-soft px-3 py-2 text-pc-caption text-pc-text"
         >
-          Couldn't save that — try again.
+          {errorToast}
         </div>
       )}
     </div>
@@ -175,10 +208,19 @@ function ExtractedCard({
 function ConfirmedCard({ fact }: { fact: PayslipFact }) {
   return (
     <div className="rounded-2xl border border-pc-border bg-pc-sage-soft p-4">
+      {fact.employerName && (
+        <div className="mb-3 border-b border-pc-border pb-3">
+          <div className="text-pc-caption text-pc-text-muted">Employer</div>
+          <div className="mt-0.5 text-pc-body font-medium text-pc-text">
+            {fact.employerName}
+          </div>
+        </div>
+      )}
       <div className="text-pc-body font-medium text-pc-text">
         ✓ We found these values (confirmed)
       </div>
       <FactRows fact={fact} />
+      <EarningsBreakdown earnings={fact.earnings} />
       <p className="mt-3 text-pc-caption text-pc-text-muted">
         Confirmed by you
       </p>
@@ -186,7 +228,22 @@ function ConfirmedCard({ fact }: { fact: PayslipFact }) {
   )
 }
 
-function FactRows({ fact }: { fact: PayslipFact }) {
+// ─────────────────────────────────────────────────────────────────
+// FactRows — summary table. The Hours row is editable in the
+// extracted state (BUILD-12 wedge: one field, demonstrating the
+// "user becomes authority" pattern). Other rows stay read-only
+// until BUILD-13+.
+// ─────────────────────────────────────────────────────────────────
+
+function FactRows({
+  fact,
+  editableHours = false,
+  onSaveHours,
+}: {
+  fact: PayslipFact
+  editableHours?: boolean
+  onSaveHours?: (hours: number) => Promise<boolean>
+}) {
   return (
     <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-pc-body">
       <Row label="Pay date" value={formatDate(fact.payDate)} />
@@ -194,7 +251,11 @@ function FactRows({ fact }: { fact: PayslipFact }) {
         label="Pay period"
         value={formatPeriod(fact.periodStart, fact.periodEnd)}
       />
-      <Row label="Hours worked" value={formatHours(fact.reportedHours)} />
+      {editableHours && onSaveHours ? (
+        <EditableHoursRow value={fact.reportedHours} onSave={onSaveHours} />
+      ) : (
+        <Row label="Hours worked" value={formatHours(fact.reportedHours)} />
+      )}
       <Row label="Hourly rate" value={formatCurrency(fact.hourlyRate)} />
       <Row label="Gross pay" value={formatCurrency(fact.grossPay)} />
       <Row label="Net pay" value={formatCurrency(fact.netPay)} />
@@ -204,7 +265,13 @@ function FactRows({ fact }: { fact: PayslipFact }) {
   )
 }
 
-function Row({ label, value }: { label: string; value: { text: string; missing: boolean } }) {
+function Row({
+  label,
+  value,
+}: {
+  label: string
+  value: { text: string; missing: boolean }
+}) {
   return (
     <>
       <dt className="text-pc-caption text-pc-text-muted">{label}</dt>
@@ -218,6 +285,195 @@ function Row({ label, value }: { label: string; value: { text: string; missing: 
       </dd>
     </>
   )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EditableHoursRow — first user-edit affordance in the system.
+// Read state shows the value + an "Edit" link. Tap → input +
+// Save/Cancel. Save fires UPDATE; on success the parent refetches
+// and the row re-renders with the new value (and confirmed_at gets
+// reset to NULL by the audit trigger if the row was confirmed —
+// next mount of the card will reflect that).
+// ─────────────────────────────────────────────────────────────────
+
+function EditableHoursRow({
+  value,
+  onSave,
+}: {
+  value: number | null
+  onSave: (hours: number) => Promise<boolean>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState<string>('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Sync the draft when the underlying value changes mid-edit (e.g.,
+  // refetch happened). Only resets when not actively editing.
+  useEffect(() => {
+    if (!editing) {
+      setDraft(value === null ? '' : String(value))
+    }
+  }, [value, editing])
+
+  const startEdit = useCallback(() => {
+    setDraft(value === null ? '' : String(value))
+    setError(null)
+    setEditing(true)
+  }, [value])
+
+  const cancelEdit = useCallback(() => {
+    setEditing(false)
+    setError(null)
+  }, [])
+
+  const save = useCallback(async () => {
+    const trimmed = draft.trim()
+    if (trimmed.length === 0) {
+      setError('Enter the hours from your payslip.')
+      return
+    }
+    const parsed = Number(trimmed)
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      setError('That doesn\'t look like a valid number.')
+      return
+    }
+    if (parsed > 168) {
+      setError("That's more than a week of hours — check the value.")
+      return
+    }
+    setSaving(true)
+    const ok = await onSave(parsed)
+    setSaving(false)
+    if (ok) {
+      setEditing(false)
+      setError(null)
+    } else {
+      setError("Couldn't save that — try again.")
+    }
+  }, [draft, onSave])
+
+  const formatted = formatHours(value)
+
+  if (!editing) {
+    return (
+      <>
+        <dt className="text-pc-caption text-pc-text-muted">Hours worked</dt>
+        <dd className="flex flex-wrap items-baseline gap-2 text-pc-body">
+          <span
+            className={cn(
+              formatted.missing
+                ? 'italic text-pc-text-muted'
+                : 'text-pc-text',
+            )}
+          >
+            {formatted.text}
+          </span>
+          <button
+            type="button"
+            onClick={startEdit}
+            className="text-pc-caption font-medium text-pc-navy underline hover:text-pc-navy-hover"
+          >
+            Edit
+          </button>
+        </dd>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <dt className="text-pc-caption text-pc-text-muted">Hours worked</dt>
+      <dd className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="number"
+            inputMode="decimal"
+            min="0"
+            step="0.25"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={saving}
+            className={cn(
+              'w-28 rounded-xl border border-pc-border bg-white px-3 py-2 text-pc-body',
+              'focus-visible:outline-none focus-visible:shadow-pc-focus',
+            )}
+            aria-label="Hours worked"
+          />
+          <Button variant="primary" onClick={save} disabled={saving}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
+          <Button variant="tertiary" onClick={cancelEdit} disabled={saving}>
+            Cancel
+          </Button>
+        </div>
+        {error && (
+          <p className="text-pc-caption text-pc-amber">{error}</p>
+        )}
+      </dd>
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────
+// EarningsBreakdown — read-only structured view of earnings[].
+// Renders only when extraction returned at least one entry. v01
+// extractions (pre-BUILD-11.6) have empty earnings arrays; the
+// section silently doesn't render in that case.
+// ─────────────────────────────────────────────────────────────────
+
+function EarningsBreakdown({ earnings }: { earnings: EarningsLine[] }) {
+  if (earnings.length === 0) return null
+
+  return (
+    <div className="mt-4 border-t border-pc-border pt-3">
+      <div className="text-pc-caption text-pc-text-muted">Breakdown</div>
+      <ul className="mt-2 flex flex-col gap-1.5">
+        {earnings.map((line, i) => (
+          <li key={i} className="flex items-baseline justify-between gap-3">
+            <span className="text-pc-body text-pc-text">
+              {earningsLabel(line)}
+            </span>
+            <span className="font-mono text-pc-body text-pc-text">
+              {formatCurrency(line.amount).text}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
+function earningsLabel(line: EarningsLine): string {
+  // Prefer the model's preserved label (e.g., "Saturday penalty",
+  // "Leading Hand"). Fall back to the type token if no label.
+  const base =
+    line.label && line.label.trim().length > 0
+      ? line.label.trim()
+      : typeLabel(line.type)
+  if (line.hours !== null) {
+    const hoursText = Number.isInteger(line.hours)
+      ? `${line.hours}`
+      : line.hours.toFixed(2)
+    return `${base} · ${hoursText} h`
+  }
+  return base
+}
+
+function typeLabel(t: EarningsLine['type']): string {
+  switch (t) {
+    case 'ordinary':
+      return 'Ordinary'
+    case 'penalty':
+      return 'Penalty'
+    case 'overtime':
+      return 'Overtime'
+    case 'allowance':
+      return 'Allowance'
+    case 'other':
+    default:
+      return 'Other'
+  }
 }
 
 function SkeletonRow() {
@@ -290,7 +546,6 @@ function formatHours(n: number | null): { text: string; missing: boolean } {
   if (n === null || n === undefined) {
     return { text: 'not visible', missing: true }
   }
-  // Drop trailing .00 for whole hours; keep decimals when meaningful.
   const text = Number.isInteger(n) ? `${n}` : n.toFixed(2)
   return { text, missing: false }
 }
