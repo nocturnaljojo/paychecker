@@ -138,7 +138,7 @@ function ExtractedCard({
       )}
 
       <p className="mt-4 text-pc-body text-pc-text">
-        Did we get these right?
+        Check this matches your payslip
       </p>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
