@@ -252,3 +252,26 @@ The 012A.1 commit chain (to be created) will land on top of this lineage:
 1. `chore(calibration): ...` — if any CAL-003 promotion happens (per 012A.1 plan)
 2. `fix(rls): align document_cases policies with (SELECT current_worker_id()) pattern (012A.1)` — single-file migration
 3. `chore(retro): Session 012A.1 close-out`
+
+## Correction (added 2026-05-02 by Session 012A.1)
+
+**Append-only correction. Nothing above this section has been edited.** Future readers should treat the addendum's diagnosis section as a frozen historical record of what was believed at close-of-day 012A, not as the final root cause.
+
+The "Diagnosis" subsection above (the bare-vs-wrapped + InitPlan + multi-phase RLS theory) was empirically falsified during Session 012A.1 by Test 2 + Test 2.5. Migration 0019 (the wrap fix proposed by that diagnosis) shipped and was applied to the live DB; structurally `pg_get_expr(polqual)` confirmed both `document_cases` policies were wrapped. The soft-delete bug still happened — Playwright reproduced it against real PostgREST + real Clerk JWT + real worker A; Postgres logged the same `42501: new row violates row-level security policy` error post-wrap. Migration 0019 is correct as defensive convention alignment but is **not** the load-bearing fix.
+
+The actual root cause: the SELECT policy's `deleted_at IS NULL` clause is checked against the post-UPDATE row when the UPDATE mutates `deleted_at`. Because the new row's `deleted_at` is non-null after the UPDATE applies, the new row no longer satisfies SELECT-USING. Postgres aborts with the standard `42501` error message — which Postgres uses for **both** WITH CHECK violations **and** SELECT-USING-failures-on-new-row in this configuration. The error text identical to the WITH CHECK case was the load-bearing red herring that made the multi-phase / InitPlan theory look like the right answer.
+
+The load-bearing fix is migration 0020 (drop `deleted_at IS NULL` from `document_cases_select_own.qual`) plus a frontend convention (every list query against `document_cases` carries `.is('deleted_at', null)` at the application layer, no exceptions). Defence-in-depth for stale-URL access remains in scope of ISS-015. See `docs/retros/2026-05-02-s012a1-rls-soft-delete-fix.md` for the full 012A.1 narrative, three falsification tests, all 7 acceptance criteria results, and the new CAL-004 calibration item that codifies the lesson ("falsify mechanical RLS theories empirically before publishing as root cause").
+
+The "Approved scope decisions for 012A.1" subsection above is also superseded — by the 012A.1 plan + approved replans, which authorised migration 0020 + the frontend filter convention. The original list (wrap both USING and WITH CHECK; also wrap SELECT.USING) was implemented in `08fc6b8` but turned out to be insufficient.
+
+The "Three security checks" subsection above remains valid as a *security model*: the proposed fix preserves all three guarantees. They were re-verified in 012A.1 against the actual fix shape (migration 0020) — see acceptance criteria 4, 5, and 6 in the 012A.1 retro.
+
+The 012A.1 commit chain that ultimately landed (replacing the speculative chain at the end of the previous section):
+
+| SHA | Subject | Role |
+|---|---|---|
+| `51195f3` | `chore(claude-md): apply CAL-003 — RLS verification requires quoting both qual AND with_check` | First application of CAL-003 |
+| `08fc6b8` | `chore(rls): align document_cases policies with auth_rls_initplan convention (012A.1 step 1 of 2 — defensive, not the load-bearing fix; see 0020)` | Migration 0019 — defensive alignment |
+| `db066b3` | `fix(rls): drop deleted_at filter from document_cases SELECT policy + filter at frontend (012A.1 — the load-bearing soft-delete fix; ISS-016)` | Migration 0020 + 3 frontend files — load-bearing fix |
+| _(012A.1 retro commit)_ | `chore(retro): Session 012A.1 close-out` | Includes this correction append |

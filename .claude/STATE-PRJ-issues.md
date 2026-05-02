@@ -37,6 +37,21 @@
 
 ## Open issues
 
+### ISS-016 — `document_cases` soft-delete UPDATE rejected by RLS (`new row violates row-level security policy`)
+- **Severity:** P1
+- **Status:** FIXED
+- **Found:** 2026-05-02 by Jovi (Session 012A manual smoke test)
+- **Phase:** 0 (Sprint 012A.1)
+- **Symptom:** Soft-delete UI clicks (trash → Delete on `/cases`) opened the modal, fired the optimistic removal, but never persisted. After refresh the row reappeared. DB confirmed `deleted_at IS NULL` on the targeted `case_id`. Network log: PATCH `document_cases?case_id=eq.<uuid>` → 401. Postgres logs: `ERROR: new row violates row-level security policy for table "document_cases"` (errcode 42501) at every PATCH timestamp. Reproducible across two distinct Clerk accounts + two case_ids; same root cause both times.
+- **Repro:** Sign in as worker, navigate to `/cases`, click trash → Delete on a paper. Refresh. Paper still visible. Supabase MCP `get_logs` (service=postgres) shows the RLS WITH CHECK errors at PATCH timestamps.
+- **Root cause:** The SELECT policy `document_cases_select_own.qual` (created in migration 0014, propagated in 0018) was `worker_id = current_worker_id() AND deleted_at IS NULL`. When the UPDATE mutates `deleted_at = now()`, the new row no longer satisfies the SELECT-USING `deleted_at IS NULL` clause. Postgres in this configuration aborts the UPDATE with the standard `42501` error — which it uses for both WITH CHECK violations AND SELECT-USING-failures-on-new-row. The 012A diagnostic addendum's bare-vs-wrapped + InitPlan multi-phase theory was a plausible explanation built from policy-text comparison against `payslip_facts.psf_self_all` (which has no soft-delete clause and so doesn't hit this circularity) and the auth_rls_initplan advisor lint. That theory was empirically falsified in 012A.1 via Test 2 (single ALL policy mirroring `psf_self_all` still failed) and Test 2.5 (dropping `deleted_at IS NULL` from SELECT-USING in a transaction made the UPDATE pass).
+- **Pre-existing:** Yes — bare-form policies created in migration 0014 (post-ISS-003 sweep, missed convention). Migration 0018 added `deleted_at IS NULL` to SELECT-USING and created the UPDATE-circularity. Surfaced when 012A's UI shipped and manual smoke fired the first PATCH against the new policy shape.
+- **Fix (across two commits, 012A.1):**
+  - `08fc6b8` — migration 0019 wraps `current_worker_id()` in `(SELECT …)` for both `document_cases` policies. Defensive convention alignment with `payslip_facts.psf_self_all` and every other public.* / storage.* policy. Closes the `auth_rls_initplan` advisor lint on this table. **NOT the load-bearing fix; the wrap alone did not fix the bug.**
+  - `db066b3` — migration 0020 drops `deleted_at IS NULL` from `document_cases_select_own.qual`. The SELECT policy becomes pure ownership. Soft-delete visibility is now enforced at the application layer: every frontend list query against `document_cases` carries `.is('deleted_at', null)`, with the convention recorded in the comment at `useAllCases.ts:68-74`. Frontend changes in the same commit: `useWorkerCases.ts:96`, `useCaseFeedback.ts:62`, `useCaseFeedback.ts:115`, plus comment updates at `useAllCases.ts:68-74` and `:163-170`. Stale-URL surface (`UploadZone.tsx:247` reading by `?case=`) is not patched here — covered by ISS-015.
+- **Trade-off accepted:** workers can SELECT their own soft-deleted rows via raw PostgREST. They cannot see anyone else's rows (UPDATE + SELECT both still enforce `worker_id = (SELECT current_worker_id())`). Privacy guarantee per APP 11.2 preserved by the UI; deleted cases are not in scope for any feature flow.
+- **Closed:** 2026-05-02 by Sprint 012A.1 commits `08fc6b8` (defensive) + `db066b3` (load-bearing). Cross-reference: see `docs/retros/2026-05-02-s012a1-rls-soft-delete-fix.md` for the full session narrative + falsification tests + 7 acceptance criteria results.
+
 ### ISS-001 — `src/lib/upload.ts` `PAYSLIPS_BUCKET` constant breaks once `payslips` bucket is removed
 - **Severity:** P2
 - **Status:** FIXED

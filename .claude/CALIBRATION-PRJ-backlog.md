@@ -24,9 +24,27 @@ went wrong), status (APPLIED / PENDING), and where it lives if applied.
 
 ## CAL-003 — RLS verification: quote both qual (USING) and with_check verbatim
 
+**Status:** APPLIED in commit `51195f3` (2026-05-02).
+**Origin:** Session 012A U4 false-resolution. The Unknowns Gate item U4 ("UPDATE-then-SELECT semantics under new policy") was marked verified in the 012A plan because the SELECT policy's USING was correct. The actual failure was attributed at the time to the UPDATE policy's WITH CHECK predicate, which was never inspected. The bare `worker_id = current_worker_id()` form looked materially different from the structurally-wrapped form on `payslip_facts`, and CAL-003 codified the discipline of quoting both clauses verbatim before claiming an RLS verification.
+**Lives in:** `CLAUDE.md` → Unknowns Gate "Architectural unknowns — STOP and ask" list, new bullet:
+> "RLS policies — quote both `qual` (USING) and `with_check` clauses verbatim from `pg_policies` before claiming a policy is verified. A USING-only check is incomplete and gives false safety. Predicates that look structurally equivalent may evaluate differently at runtime — particularly when policies call functions that read session-local config (`auth.jwt()`, `current_setting()`)."
+**Note:** CAL-003 caught the verbatim-quoting gap but did not catch the deeper "your mechanical theory might still be wrong even with verbatim quotes" gap — that's CAL-004's domain. See 012A.1 retro for falsification narrative.
+
+## CAL-004 — Falsify mechanical RLS theories empirically before publishing as root cause
+
 **Status:** PENDING. Not yet applied.
-**Origin:** Session 012A U4 false-resolution. The Unknowns Gate item U4 ("UPDATE-then-SELECT semantics under new policy") was marked verified in the 012A plan because the SELECT policy's USING was correct. The actual failure was on the UPDATE policy's WITH CHECK predicate, which was never inspected. The bare `worker_id = current_worker_id()` form failed RLS WITH CHECK at runtime while the structurally-equivalent `(SELECT current_worker_id())` form on `payslip_facts` worked fine for the same worker in the same session.
+
+**Origin:** Session 012A.1. The 012A diagnostic addendum's "bare-vs-wrapped + InitPlan + multi-phase RLS" theory was a plausible mechanical explanation built from policy-text comparison (bare `current_worker_id()` on `document_cases` vs wrapped `( SELECT current_worker_id())` on `payslip_facts`) and Supabase advisor lint reasoning. It was **empirically falsified** in 012A.1 by Test 2.5: a single ALTER POLICY on the SELECT policy's USING clause (dropping `deleted_at IS NULL`, leaving the wrap and the UPDATE policy untouched) made the failing UPDATE pass. The actual cause was the SELECT-USING `deleted_at IS NULL` clause being checked against the post-UPDATE row when the UPDATE mutates that very column — a different mechanism entirely. The wrap fix (migration 0019) was defensive convention alignment, not the load-bearing fix; the load-bearing fix is migration 0020 (drop `deleted_at IS NULL` from SELECT-USING + move the filter to the frontend / RPC layer).
+
 **Proposed rule:**
-> "When verifying an RLS policy as part of an Unknowns Gate resolution, ALWAYS quote both `qual` (USING) and `with_check` verbatim from `pg_policies`. A USING-only check is incomplete and gives false safety. The `qual` and `with_check` predicates may be structurally equivalent on paper but evaluated differently by Postgres at runtime — particularly when policies call functions that read session-local config (`auth.jwt()`, `current_setting()`)."
-**Where to land:** Likely an addition to the `Unknowns Gate` section in CLAUDE.md (under "Architectural unknowns — STOP and ask" → expand the "Database schema, table relationships, column types, JSON shapes" bullet, or add a new bullet like "RLS policies — both USING and WITH CHECK clauses").
-**Awaiting:** approval batch (matches prior CAL-001 / CAL-002 cadence — applied as a CLAUDE.md edit when the next hygiene window opens, not piecemeal).
+> "When a diagnosis attributes a Postgres / RLS / planner failure to a specific structural property of a policy or function (bare-vs-wrapped, STABLE-vs-IMMUTABLE, multi-phase-evaluation, etc.), the diagnosis is not trusted as root cause until ALL THREE of the following are true:
+>
+> 1. The failing operation has been reproduced empirically against the actual production policy shape.
+> 2. A minimal isolated change to the proposed cause has been shown to make the operation pass (transaction + ROLLBACK is fine).
+> 3. The proposed fix has been shown to actually fix the operation — not just satisfy a separately-correct invariant.
+>
+> Policy-text comparison and behavioural analogues across similar tables are useful priors but are not the diagnosis."
+
+**Where to land:** likely a new bullet under Architecture Guardrails STRICT, OR an addition to the Unknowns Gate "Architectural unknowns — STOP and ask" list (it complements CAL-003 — CAL-003 is about quoting both qual + with_check verbatim, CAL-004 is about empirically running the failure path before publishing a theory). Defer to next hygiene window.
+
+**Awaiting:** approval batch.
