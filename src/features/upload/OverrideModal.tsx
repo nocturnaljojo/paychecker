@@ -114,21 +114,28 @@ export function OverrideModal({
           {CATEGORIES.map((c) => {
             const isCurrent = current === c.token
             return (
-              <button
-                key={c.token}
-                type="button"
-                onClick={() => onSelect(c.token)}
-                className={cn(
-                  'h-14 w-full rounded-2xl border text-left text-[18px] font-medium transition-colors',
-                  'px-4 py-3',
-                  'focus-visible:outline-none focus-visible:shadow-pc-focus',
-                  isCurrent
-                    ? 'border-pc-navy bg-pc-navy-soft text-pc-navy'
-                    : 'border-pc-border-strong bg-white text-pc-text hover:bg-pc-bg',
+              <div key={c.token} className="flex flex-col gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => onSelect(c.token)}
+                  className={cn(
+                    'h-14 w-full rounded-2xl border text-left text-[18px] font-medium transition-colors',
+                    'px-4 py-3',
+                    'focus-visible:outline-none focus-visible:shadow-pc-focus',
+                    isCurrent
+                      ? 'border-pc-navy bg-pc-navy-soft text-pc-navy'
+                      : 'border-pc-border-strong bg-white text-pc-text hover:bg-pc-bg',
+                  )}
+                >
+                  {c.label}
+                </button>
+                {c.token === 'other' && (
+                  <p className="px-1 text-pc-caption text-pc-text-muted [text-wrap:pretty]">
+                    For important papers that don't fit yet — like insurance,
+                    visa, letters, or Fair Work information.
+                  </p>
                 )}
-              >
-                {c.label}
-              </button>
+              </div>
             )
           })}
         </div>
