@@ -1,0 +1,52 @@
+-- ============================================================
+-- Migration 0020: document_cases SELECT policy — drop deleted_at filter (012A.1)
+-- Session 012A.1 (2026-05-02). Hotfix to ISS-016. Load-bearing
+-- soft-delete fix.
+--
+-- Background: 012A migration 0018 added `deleted_at IS NULL` to
+-- `document_cases_select_own.qual` to enforce the soft-delete
+-- contract at the RLS layer. The 012A diagnostic addendum
+-- (docs/retros/2026-05-02-s012a-soft-delete-cases.md) initially
+-- attributed the resulting UPDATE failure ("new row violates
+-- row-level security policy" on every PATCH) to a bare-vs-wrapped
+-- planner-cache issue and shipped 0019 as the wrap fix.
+--
+-- 012A.1 empirically falsified that theory — see CAL-004
+-- (.claude/CALIBRATION-PRJ-backlog.md) and the 012A.1 retro
+-- (docs/retros/2026-05-02-s012a1-rls-soft-delete-fix.md).
+-- The actual root cause: the `deleted_at IS NULL` clause in the
+-- SELECT policy USING is checked against the post-UPDATE row when
+-- the UPDATE mutates that very column. After `deleted_at` is set
+-- to now(), the new row no longer satisfies the SELECT-USING
+-- predicate, and Postgres aborts the UPDATE with the same error
+-- text used for WITH CHECK violations. The wrap form (0019) does
+-- not address this; it is preserved because it is correct
+-- defensive convention alignment (closes the auth_rls_initplan
+-- lint, matches every other policy in the project) but it is
+-- NOT the load-bearing fix.
+--
+-- Real fix: drop the `deleted_at IS NULL` clause from the SELECT
+-- policy USING. Move soft-delete visibility filtering to the
+-- application layer:
+--   - Frontend list queries against document_cases include
+--     `.is('deleted_at', null)` explicitly. Convention from this
+--     migration onwards: no exceptions.
+--   - Stale-URL surface (UploadZone reading by ?case=) is
+--     defended by ISS-015 (extend_case_with_document RPC adding
+--     `AND deleted_at IS NULL` to its ownership check). ISS-015
+--     remains OPEN; this migration does not touch it.
+--
+-- Trade-off accepted: a worker can SELECT their own soft-deleted
+-- rows via raw PostgREST. They cannot see anyone else's rows
+-- (UPDATE policy and SELECT policy both still enforce
+-- `worker_id = current_worker_id()`). The privacy guarantee per
+-- APP 11.2 — soft-delete from the worker's perspective — is
+-- preserved by the UI; deleted cases are not in scope for any
+-- feature flow.
+--
+-- UPDATE policy (`document_cases_update_own`) is intentionally
+-- untouched in this migration.
+-- ============================================================
+
+alter policy document_cases_select_own on public.document_cases
+  using (worker_id = (select current_worker_id()));

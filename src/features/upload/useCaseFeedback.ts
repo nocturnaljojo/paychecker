@@ -60,6 +60,7 @@ export function useCaseFeedback(documentIds: ReadonlyArray<string>) {
       .from('document_cases')
       .select('case_id', { count: 'exact', head: true })
       .in('completion_status', ['suggested', 'confirmed'])
+      .is('deleted_at', null)
     if (!error && typeof count === 'number') {
       setReadyCount(count)
     }
@@ -113,6 +114,7 @@ export function useCaseFeedback(documentIds: ReadonlyArray<string>) {
         .from('document_cases')
         .select('case_id, doc_type, completion_status')
         .in('case_id', caseIds)
+        .is('deleted_at', null)
       if (cancelled) return
       if (caseResult.error) {
         setCases([])

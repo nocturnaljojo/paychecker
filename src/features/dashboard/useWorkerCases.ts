@@ -93,6 +93,7 @@ export function useWorkerCases(): WorkerCasesState {
       const result = await supabase
         .from('document_cases')
         .select('case_id, doc_type, completion_status, created_at, updated_at')
+        .is('deleted_at', null)
         .order('created_at', { ascending: false })
       if (cancelled) return
       if (result.error) {

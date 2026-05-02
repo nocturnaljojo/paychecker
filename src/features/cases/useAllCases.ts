@@ -65,11 +65,13 @@ export function useAllCases(): UseAllCasesState {
   const fetchAll = useCallback(async () => {
     setIsLoading(true)
     setHasError(false)
-    // Session 012A — explicit deleted_at IS NULL filter alongside the
-    // RLS policy (Migration 0018). Belt-and-suspenders: RLS already
-    // hides soft-deleted rows, but the explicit filter makes the
-    // frontend's intent visible to future readers and survives any
-    // downstream RLS policy change.
+    // Required filter — Migration 0020 dropped `deleted_at IS NULL`
+    // from `document_cases_select_own.qual` because the RLS clause
+    // failed UPDATE attempts that mutated `deleted_at` (the post-
+    // UPDATE row no longer satisfied SELECT-USING; ISS-016). From
+    // 0020 onwards every list query against `document_cases` carries
+    // `.is('deleted_at', null)` at the application layer — no
+    // exceptions, even where the filter is logically redundant.
     const caseResult = await supabase
       .from('document_cases')
       .select('case_id, doc_type, completion_status, created_at, updated_at')
@@ -160,11 +162,12 @@ export function useAllCases(): UseAllCasesState {
     [supabase, cases],
   )
 
-  // Session 012A — soft delete (APP 11.2). Optimistic UI mirrors
-  // updateCaseLabel: snapshot the local list, remove the row
-  // immediately, fire the UPDATE, restore on failure. The DB SELECT
-  // policy now filters deleted_at IS NULL so a refetch would also
-  // hide the row; the local removal just makes the UX instant.
+  // Soft delete (APP 11.2). Optimistic UI mirrors updateCaseLabel:
+  // snapshot the local list, remove the row immediately, fire the
+  // UPDATE, restore on failure. After 012A.1 / Migration 0020 the
+  // DB SELECT policy no longer filters `deleted_at`; the row is
+  // hidden from refetches by the application-layer filter at the
+  // SELECT chain above. The local removal just makes the UX instant.
   //
   // Storage object is deliberately left in place per Session 012A
   // hard-stop. Hard-delete cron is separate work.
