@@ -348,6 +348,7 @@ async function handler(request: Request): Promise<Response> {
       .select('case_id, doc_type, worker_id')
       .eq('case_id', extendCaseId)
       .eq('worker_id', workerId)
+      .is('deleted_at', null)
       .maybeSingle()
     if (ownerCheck.error || !ownerCheck.data) {
       console.error(

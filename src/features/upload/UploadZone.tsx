@@ -247,6 +247,7 @@ export function UploadZone() {
         .from('document_cases')
         .select('doc_type')
         .eq('case_id', extendingCaseId)
+        .is('deleted_at', null)
         .maybeSingle()
       if (cancelled || caseRow.error || !caseRow.data) {
         setExtendingCase(null)
