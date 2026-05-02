@@ -60,6 +60,7 @@ Origin: introduced in response to BUILD-11 incidents (assumed `payslip_facts` sh
 - Do NOT introduce new tables, columns, or JSON shapes unless explicitly listed in the session scope.
 - Do NOT refactor existing models unless required to meet acceptance criteria.
 - Do NOT create multiple sources of truth for the same value. If a change would introduce a second representation of an existing fact, STOP and flag it.
+- Defensive convention work MUST be labelled defensive in the commit message AND retro AND not occupy the "fix" slot in any plan until end-to-end pass is verified. A candidate fix informed by structural reasoning (policy comparison, advisor lint, convention alignment) but not empirically falsified by a transaction-scoped minimal mutation against the actual failure path is defensive, not load-bearing. For RLS failures specifically, require a transaction-scoped minimal policy mutation against a live PostgREST request (or equivalent end-to-end test) before committing the migration.
 
 ## Unknowns Gate (MANDATORY before any code in /build)
 
@@ -74,6 +75,12 @@ Before writing any code in /build, classify every unknown:
 - Whether existing data is immutable or mutable
 - Interaction with audit/history tables or confirmation state
 - RLS policies — quote both `qual` (USING) and `with_check` clauses verbatim from `pg_policies` before claiming a policy is verified. A USING-only check is incomplete and gives false safety. Predicates that look structurally equivalent may evaluate differently at runtime — particularly when policies call functions that read session-local config (`auth.jwt()`, `current_setting()`).
+- Engine-semantics diagnoses (RLS policy shape, function volatility, triggers, RETURNING behavior, RPC security, planner/cache behavior) — do not publish a diagnosis as root cause or ship a candidate as the load-bearing fix until ALL THREE of the following are true:
+  1. The failing operation has been reproduced empirically against the actual production policy shape.
+  2. A minimal isolated change to the proposed cause has been shown to make the operation pass (transaction + ROLLBACK is fine).
+  3. The proposed fix has been shown to actually fix the operation — not just satisfy a separately-correct invariant.
+
+  Policy-text comparison and behavioural analogues across similar tables are useful priors but are not the diagnosis.
 
 **Implementation unknowns — choose and log:**
 - Component naming, icon choice, copy text
