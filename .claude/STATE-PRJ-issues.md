@@ -52,6 +52,42 @@
 - **Trade-off accepted:** workers can SELECT their own soft-deleted rows via raw PostgREST. They cannot see anyone else's rows (UPDATE + SELECT both still enforce `worker_id = (SELECT current_worker_id())`). Privacy guarantee per APP 11.2 preserved by the UI; deleted cases are not in scope for any feature flow.
 - **Closed:** 2026-05-02 by Sprint 012A.1 commits `08fc6b8` (defensive) + `db066b3` (load-bearing). Cross-reference: see `docs/retros/2026-05-02-s012a1-rls-soft-delete-fix.md` for the full session narrative + falsification tests + 7 acceptance criteria results.
 
+### ISS-017 — `document_cases_active` view to restore single-source-of-truth on soft-delete contract
+- **Severity:** P2
+- **Status:** OPEN
+- **Found:** 2026-05-02 by Codex adversarial review of 012A.1 (Q2)
+- **Phase:** 0 (post-012A.1 follow-up)
+- **Symptom:** After migration 0020, the soft-delete visibility contract lives in N application call sites instead of one RLS predicate. Convention enforcement ("no exceptions" comments) does not survive the 9th call site added at 2am.
+- **Proposed fix:** Create `document_cases_active` view with `security_invoker = on` selecting `WHERE deleted_at IS NULL`. Migrate all read/list call sites to use the view. Writes stay on the base table. Add a lint or code-search check that forbids new `.from('document_cases').select(...)` outside an explicit allowlist of mutation/stale-URL paths.
+- **Scope:** Full session, not a hotfix. Sequence: design proposal first (view + security_invoker semantics + migration plan + lint mechanism), approve, then implement.
+- **Reference:** `docs/retros/2026-05-02-s012a1-rls-soft-delete-fix.md` → trade-off section; Codex review Q2.
+- **Closed:** _open_
+
+### ISS-018 — `extend_case_with_document` RPC + `api/classify.ts` owner check + UploadZone anchor query missing `deleted_at IS NULL`
+- **Severity:** P2 (promoted from ISS-015's original P3 on Codex evidence)
+- **Status:** OPEN
+- **Found:** Originally as ISS-015 (2026-05-02 by Session 012A plan U3, framed as "stale bookmarks"). Threat model upgraded by Codex adversarial review of 012A.1 (Q3) on 2026-05-02 evening.
+- **Supersedes:** ISS-015. Mark ISS-015 as SUPERSEDED-BY-018; do not keep both as separate active issues.
+- **Threat model upgrade:** Original ISS-015 framed the gap as abstract "stale bookmarks." Codex evidence elevated it to three concrete paths a real worker can hit during normal browsing: (1) browser history, (2) bookmarks, AND (3) already-open `/upload?case=` tabs. The third path is the load-bearing concern — a worker with the upload page open in another tab who deletes a case from `/cases` can immediately attach more documents to the now-deleted case. This is normal browsing pattern, not deliberate URL manipulation. Justifies the P2 bump and next-session priority.
+- **Symptom:** A worker can extend (attach more documents to) a soft-deleted case via stale `/upload?case=<uuid>` URL access. The RPC `extend_case_with_document` (migration 0015) checks ownership but not `deleted_at`. The `api/classify.ts` owner check mirrors the same gap. The UploadZone anchor query (`UploadZone.tsx:246-250`) reads `document_cases` by `case_id` without a `deleted_at` filter, so the UI also displays deleted cases as valid attachment targets.
+- **Repro:** Sign in as worker, open `/upload?case=<uuid>` in tab A, navigate to `/cases` in tab B, delete that case in tab B, return to tab A, attach more documents. Documents land on the soft-deleted case.
+- **Proposed fix (single small session):**
+  - Migration: `ALTER FUNCTION extend_case_with_document` — add `AND deleted_at IS NULL` to the ownership check.
+  - Frontend: `api/classify.ts` — add `deleted_at IS NULL` filter to owner check.
+  - Frontend: `UploadZone.tsx:246-250` — add `.is('deleted_at', null)` to the anchor query so the UI does not display a deleted case as an attachment target.
+- **Scope:** One small session. Highest priority of the new findings — close before 012B opens.
+- **Closed:** _open_
+
+### ISS-019 — Optimistic soft-delete should verify `count === 1`
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-02 by Codex adversarial review of 012A.1 (Q4)
+- **Phase:** 0 (post-012A.1 follow-up)
+- **Symptom:** `softDeleteCase` in `useAllCases.ts:171-188` fires the optimistic local removal and checks `result.error` to decide rollback. Today's UPDATE policy means `count` is always 1 if no error. Defensive against future conditions (RPC restrictions, ownership-change races, deletion races) where a 204-no-rows response would silently lie to the optimistic UI — `result.error` would be null, optimistic removal would persist, but the DB write would not have landed.
+- **Proposed fix:** `useAllCases.ts` `softDeleteCase` — change `.update({deleted_at})` to `.update({deleted_at}, { count: 'exact' })` and require `count === 1` before treating as success. Two-line change.
+- **Scope:** Pair with the next time `useAllCases.ts` is touched. Not standalone.
+- **Closed:** _open_
+
 ### ISS-001 — `src/lib/upload.ts` `PAYSLIPS_BUCKET` constant breaks once `payslips` bucket is removed
 - **Severity:** P2
 - **Status:** FIXED
@@ -98,14 +134,14 @@
 
 ### ISS-015 — `extend_case_with_document` RPC missing `deleted_at IS NULL` check
 - **Severity:** P3
-- **Status:** OPEN
+- **Status:** SUPERSEDED-BY-018 (2026-05-02 evening)
 - **Found:** 2026-05-02 by Session 012A plan (Unknowns Gate U3)
 - **Phase:** 0 (cross-cutting — defense-in-depth)
 - **Symptom:** RPC defense-in-depth: `extend_case_with_document` (migration 0015) does not check `deleted_at IS NULL`. Reachable today only via stale case URLs (bookmarks, magic links, recently-viewed widgets). Add `deleted_at IS NULL` check to RPC body. Surfaced by Session 012A plan; deferred from 012A scope.
 - **Repro:** Soft-delete a case A via the 012A flow. Open `/upload?case={A.case_id}` directly via a saved URL. The UI hides deleted cases via the SELECT RLS policy so the worker can't reach this path from `/cases` normally; only direct URL access exposes it. The classify endpoint then calls `extend_case_with_document` which today verifies ownership but not delete state.
 - **Root cause:** Migration 0015 wrote the RPC before soft-delete existed. Migration 0018 added `deleted_at` to `document_cases` but did not touch the RPC body.
-- **Fix:** Update `extend_case_with_document` RPC ownership check to add `AND deleted_at IS NULL`. One-line addition; new follow-up migration. Likely bundled into Session 012C provenance work.
-- **Closed:** _open — fix in a follow-up sprint_
+- **Fix:** See ISS-018 — Codex adversarial review of 012A.1 (Q3) elevated the threat model from abstract "stale bookmarks" to concrete "browser history + bookmarks + already-open `/upload?case=` tabs" with the open-tab path being normal browsing pattern, not deliberate URL manipulation. The wider scope (also covers `api/classify.ts` owner check and the UploadZone anchor query) and the higher severity (P2 not P3) warranted a new issue rather than an update to ISS-015. ISS-018 carries the work forward; do not act on ISS-015 in isolation.
+- **Closed:** SUPERSEDED-BY-018 on 2026-05-02 evening. Tracking continues in ISS-018.
 
 ### ISS-014 — `api/classify.ts` hybrid entrypoint shape causes 300s hang at `request.json()`
 - **Severity:** P1 (production smoke validation blocker; function hangs full plan-default timeout on every request)

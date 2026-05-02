@@ -37,14 +37,23 @@ went wrong), status (APPLIED / PENDING), and where it lives if applied.
 **Origin:** Session 012A.1. The 012A diagnostic addendum's "bare-vs-wrapped + InitPlan + multi-phase RLS" theory was a plausible mechanical explanation built from policy-text comparison (bare `current_worker_id()` on `document_cases` vs wrapped `( SELECT current_worker_id())` on `payslip_facts`) and Supabase advisor lint reasoning. It was **empirically falsified** in 012A.1 by Test 2.5: a single ALTER POLICY on the SELECT policy's USING clause (dropping `deleted_at IS NULL`, leaving the wrap and the UPDATE policy untouched) made the failing UPDATE pass. The actual cause was the SELECT-USING `deleted_at IS NULL` clause being checked against the post-UPDATE row when the UPDATE mutates that very column — a different mechanism entirely. The wrap fix (migration 0019) was defensive convention alignment, not the load-bearing fix; the load-bearing fix is migration 0020 (drop `deleted_at IS NULL` from SELECT-USING + move the filter to the frontend / RPC layer).
 
 **Proposed rule:**
-> "When a diagnosis attributes a Postgres / RLS / planner failure to a specific structural property of a policy or function (bare-vs-wrapped, STABLE-vs-IMMUTABLE, multi-phase-evaluation, etc.), the diagnosis is not trusted as root cause until ALL THREE of the following are true:
->
-> 1. The failing operation has been reproduced empirically against the actual production policy shape.
-> 2. A minimal isolated change to the proposed cause has been shown to make the operation pass (transaction + ROLLBACK is fine).
-> 3. The proposed fix has been shown to actually fix the operation — not just satisfy a separately-correct invariant.
->
-> Policy-text comparison and behavioural analogues across similar tables are useful priors but are not the diagnosis."
+> "When a diagnosis attributes a database authorization, visibility, or write failure to engine semantics — including RLS policy shape, function volatility, triggers, RETURNING behavior, RPC security, or planner/cache behavior — do not publish it as root cause or ship it as the load-bearing fix until reproduction, minimal isolated change, and proposed fix have all passed."
+
+**Reason for current wording (broadened 2026-05-02 evening):** Original CAL-004 wording scoped the trigger narrowly to "policy or function structural property" (bare-vs-wrapped, STABLE-vs-IMMUTABLE, multi-phase-evaluation). Codex adversarial review of 012A.1 (Q5) noted today's bug was actually about RLS visibility/write semantics, not planner behavior — so the original wording was too narrow to catch the actual failure class. The broader framing covers RLS visibility, triggers, RETURNING behavior, and RPC security alongside the original planner/cache concerns. The three required passes (reproduction → minimal isolated change → proposed fix) are unchanged; only the trigger surface broadened.
 
 **Where to land:** likely a new bullet under Architecture Guardrails STRICT, OR an addition to the Unknowns Gate "Architectural unknowns — STOP and ask" list (it complements CAL-003 — CAL-003 is about quoting both qual + with_check verbatim, CAL-004 is about empirically running the failure path before publishing a theory). Defer to next hygiene window.
 
 **Awaiting:** approval batch.
+
+## CAL-005 — Defensive migrations are labelled defensive BEFORE deploy, not after smoke fails
+
+**Status:** PENDING.
+
+**Origin:** Session 012A.1, Codex adversarial review Q6. Migration 0019 occupied the "fix" slot in commit chain ordering and was applied to live DB before the falsification test (Test 2.5) identified the actual root cause. The 012A correction note records that the InitPlan theory was falsified only after migration 0019 shipped and still failed under real PostgREST. Under stricter discipline, defensive convention work should be either (a) explicitly labelled defensive in commit message and retro before deploy, or (b) held in branch until the load-bearing fix is identified.
+
+**Proposed rule:**
+> "When a candidate fix is informed by structural reasoning (policy comparison, advisor lint, convention alignment) but has not been empirically falsified by a transaction-scoped minimal mutation against the actual failure path, it MUST be labelled as defensive in the commit message AND retro AND not occupy the 'fix' slot in any plan until end-to-end pass is verified. For RLS failures specifically, require a transaction-scoped minimal policy mutation against a live PostgREST request (or equivalent end-to-end test) before committing the migration."
+
+**Where to land:** Architecture Guardrails STRICT, alongside CAL-003 and CAL-004.
+
+**Awaiting:** approval batch at next CLAUDE.md hygiene window.
