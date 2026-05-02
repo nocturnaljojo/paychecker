@@ -149,6 +149,26 @@ async function classifyOne(
       detectedType: body.detected_type,
       classificationId: body.classification_id,
     })
+
+    // Sprint M0.5-BUILD-11 — fire payslip extraction in parallel with the
+    // worker continuing through /upload. Non-awaited on purpose: the
+    // worker should never wait for extraction. PayslipFactsCard will
+    // render whatever state payslip_facts reaches by the time the worker
+    // navigates to /cases preview (pending → extracted | failed). The
+    // extract endpoint is idempotent on (source_doc_id, status in
+    // ['extracted','confirmed']) so accidental re-fires are safe.
+    if (body.detected_type === 'payslip') {
+      void fetch('/api/extract', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ document_id: documentId }),
+      }).catch((err) => {
+        console.error('[useClassifyBatch] extract_trigger_error', err)
+      })
+    }
   } catch (err) {
     updateEntry(setEntries, documentId, {
       status: 'failed',

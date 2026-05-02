@@ -9,6 +9,7 @@ import {
 } from '@/features/cases/vocabulary'
 import { OverrideModal } from '@/features/upload/OverrideModal'
 import { PreviewModal } from '@/features/cases/PreviewModal'
+import { PayslipFactsCard } from '@/features/cases/PayslipFactsCard'
 import ConsentRequired from '@/components/layout/ConsentRequired'
 import { IdentityIndicator } from '@/components/IdentityIndicator'
 
@@ -141,6 +142,11 @@ function CasesView() {
         }
         suppressEscape={overrideFromPreviewCaseId !== null}
         isOverlayOpen={overrideFromPreviewCaseId !== null}
+        factsCard={
+          previewCase?.docType === 'payslip' ? (
+            <PayslipFactsCard caseId={previewCase.caseId} />
+          ) : undefined
+        }
       />
 
       {/*

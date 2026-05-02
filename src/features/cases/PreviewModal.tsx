@@ -49,6 +49,14 @@ type PreviewModalProps = {
    * doc as context.
    */
   isOverlayOpen?: boolean
+  /**
+   * Sprint M0.5-BUILD-11 — composable slot rendered below the
+   * stacked document images. Caller passes the appropriate facts
+   * card (PayslipFactsCard for payslip cases; future bucket cards
+   * for contract / bank / super). Keeps PreviewModal generic;
+   * domain-specific UI lives where it belongs.
+   */
+  factsCard?: React.ReactNode
 }
 
 export function PreviewModal({
@@ -59,6 +67,7 @@ export function PreviewModal({
   onChangeType,
   suppressEscape = false,
   isOverlayOpen = false,
+  factsCard,
 }: PreviewModalProps) {
   const { documents, isLoading, hasError } = useDocumentPreview(
     open ? caseId : null,
@@ -149,6 +158,10 @@ export function PreviewModal({
                 </li>
               ))}
             </ul>
+          )}
+
+          {factsCard && (
+            <div className="mx-auto mt-6 max-w-2xl">{factsCard}</div>
           )}
         </div>
       </div>
