@@ -81,6 +81,17 @@
 - **Fix:** No action needed at Phase 0. Re-evaluate post Sprint B1+ when real traffic arrives — if any index is still unused after meaningful Apete usage, drop in a follow-up cleanup migration. Otherwise close as expected-behaviour.
 - **Closed:** _open — re-evaluate post-Sprint-B1 traffic_
 
+### ISS-015 — `extend_case_with_document` RPC missing `deleted_at IS NULL` check
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-02 by Session 012A plan (Unknowns Gate U3)
+- **Phase:** 0 (cross-cutting — defense-in-depth)
+- **Symptom:** RPC defense-in-depth: `extend_case_with_document` (migration 0015) does not check `deleted_at IS NULL`. Reachable today only via stale case URLs (bookmarks, magic links, recently-viewed widgets). Add `deleted_at IS NULL` check to RPC body. Surfaced by Session 012A plan; deferred from 012A scope.
+- **Repro:** Soft-delete a case A via the 012A flow. Open `/upload?case={A.case_id}` directly via a saved URL. The UI hides deleted cases via the SELECT RLS policy so the worker can't reach this path from `/cases` normally; only direct URL access exposes it. The classify endpoint then calls `extend_case_with_document` which today verifies ownership but not delete state.
+- **Root cause:** Migration 0015 wrote the RPC before soft-delete existed. Migration 0018 added `deleted_at` to `document_cases` but did not touch the RPC body.
+- **Fix:** Update `extend_case_with_document` RPC ownership check to add `AND deleted_at IS NULL`. One-line addition; new follow-up migration. Likely bundled into Session 012C provenance work.
+- **Closed:** _open — fix in a follow-up sprint_
+
 ### ISS-014 — `api/classify.ts` hybrid entrypoint shape causes 300s hang at `request.json()`
 - **Severity:** P1 (production smoke validation blocker; function hangs full plan-default timeout on every request)
 - **Status:** FIXED
