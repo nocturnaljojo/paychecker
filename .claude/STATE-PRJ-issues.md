@@ -80,7 +80,7 @@
 
 ### ISS-020 — Stale `?case=` UI state and orphaned classified documents
 - **Severity:** P2
-- **Status:** OPEN
+- **Status:** FIXED-pending-deploy by commit `f792d1f`
 - **Found:** 2026-05-02 evening by Codex adversarial review of commit `3552dd3` (Q3 + Q5)
 - **Phase:** 0 (post-012A.1.1 follow-up — bundled because both touch the same surface)
 - **Symptom (UI — Q3):** `UploadZone` renders the extend anchor based on `extendingCaseId` from URL (`UploadZone.tsx:52`), not on case existence. The new (012A.1.1) anchor query returns null for deleted cases (`UploadZone.tsx:247-253`) but `VisualAnchor` stays mounted with `isLoading={extendingCase === null}` (`UploadZone.tsx:332-335`). After Vercel deploys 012A.1.1 frontend, a worker who reloads tab A on `/upload?case=<deleted-uuid>` will see a permanently-loading anchor box rather than the standard upload UI degrading cleanly. This is also the post-deploy form of the AC5 test that 012A.1.1 deferred.
@@ -91,6 +91,37 @@
   1. `UploadZone.tsx`: when the anchor lookup returns null for a non-empty `extendingCaseId`, explicitly clear `extendingCaseId` (or the rendered extension state) so the UI degrades to the standard upload flow rather than rendering a permanently-loading anchor. Render must not be based on URL alone.
   2. `api/classify.ts`: when the extend path's `ownerCheck` fails, fall through to the `classify_with_case` new-case path rather than returning unlinked. Worker-visible outcome: their document attaches to a fresh case with the right `doc_type`, just not the stale one.
 - **References:** Codex Q3 (`UploadZone.tsx:52, 78, 332-335`), Codex Q5 (`api/classify.ts:336-339, 353-356, 376-377`); AC6 evidence (`documents` row `4e020e86-...`).
+- **Closed:** FIXED-pending-deploy 2026-05-02 evening by commit `f792d1f` (012A.1.2). Load-bearing fix shipped: UploadZone clears stale `?case=` via `setSearchParams({ replace: true })` + early-return cancellation guard (per Codex review Q1+Q4 — amended into the same commit before push); `api/classify.ts` extend-failure paths now fall through to `classify_with_case` so documents are linked to a fresh case rather than orphaned. Compound-failure logging (Codex Q2) and fallback UX copy (Codex Q5) tracked as **ISS-022**. Overbroad fallback (Codex Q6 — query/RPC errors silently create fresh cases instead of surfacing retriable errors) tracked as **ISS-023**.
+- **Naming guidance (per Codex Q7):** the `012A.1.2` label is the LAST in the 012A → 012A.1 → 012A.1.1 → 012A.1.2 chain. Subsequent commits revert to plain ISS-NNN naming; future commit subjects should lead with the issue ID.
+- **Test artefact disposition (per Codex Q8):** orphan document `a6a1ea0c-0577-42ad-b002-db4133bc5c44` (created during this session's Q5 repro on 2026-05-02 13:26:42Z, worker A `85e2e02f-…`, `case_id = NULL`, `state = routed`, `doc_type = payslip`, `content_hash = 5af1b66483…`) — DECISION: DELETE via Supabase MCP after final close-out. Reasoning: synthetic test artefact (`mock_payslipV3.pdf` was a base64-generated PDF with appended freshness comment; no real worker data, no PII, no Privacy Act obligation). Retention has no operational value — V4+ generation is trivial via the same byte-append technique. Cleanest end-state for production data.
+
+### ISS-022 — Compound-failure logging + fallback case creation UX copy
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-02 evening by Codex adversarial review of commit `af30d25` (Q2 + Q5)
+- **Phase:** 0 (post-012A.1.2 follow-up — bundled because both touch the same surface: classify.ts logging + UploadZone/feedback UI copy)
+- **Symptom (Q2 — compound failure):** When extend fails AND `classify_with_case` also fails, code logs `case_rpc_error` but continues into normal classify response path (`api/classify.ts:387-399, 401-471`). Worker-visible outcome is functionally the same as the original ISS-020 orphan, but the UI implies a case was surfaced when none was. Not a security or data-integrity issue — a product-truthfulness gap.
+- **Symptom (Q5 — `doc_type` mismatch UX):** When the ISS-020 fallback fires (deleted/missing case → fresh case), worker gets a fresh case with classifier's `doc_type`, which may differ from intended extend's `doc_type`. No worker-visible copy explains why a new case appeared instead of extending. Strictly better than orphan, but still an intent downgrade with no surface.
+- **Proposed fix:**
+  - Add structured log metadata for the compound-failure path: `link_attempt=extend_fallback`, `extend_case_id`, `classify_failure_reason`.
+  - Add worker-visible toast on fresh-case-from-fallback path: "Your original case was unavailable — document saved to a new case."
+  - Adjust no-case fallback copy in `useCaseFeedback` to avoid implying case creation succeeded when it didn't.
+- **Scope:** Single small session, ~3 file touches (`api/classify.ts` logging + `UploadZone` or feedback toast component + copy file if separate).
+- **References:** Codex Q2 (`api/classify.ts:387-399, 401-471`), Codex Q5 (`api/classify.ts:339-341, 387-393`).
+- **Closed:** _open_
+
+### ISS-023 — Overbroad extend-failure fallback hides real errors
+- **Severity:** P2
+- **Status:** OPEN
+- **Found:** 2026-05-02 evening by Codex adversarial review of commit `af30d25` (Q6)
+- **Phase:** 0 (post-012A.1.2 follow-up — structural improvement)
+- **Symptom:** ISS-020's fix collapsed all extend-failure modes (`ownerCheck.error`, `!ownerCheck.data`, `extendRpc.error`) into a single "fall through to `classify_with_case`" path. Real DB errors and transient RPC failures now silently create fresh cases instead of surfacing retriable errors to workers. Worker has no way to distinguish "case truly unavailable" from "transient infrastructure issue, please retry."
+- **Threat:** Two failure modes with different remediation paths but identical worker-visible outcome. Long term, this hides infrastructure regressions from workers (no retry, no support signal) and from operations (logged but not actionable per-failure-mode).
+- **Proposed fix:** Distinguish failure modes:
+  - Deterministic not-found / deleted / not-owned → fall through to fresh case (current behaviour, correct).
+  - DB query error or RPC raise on transient infrastructure → log `link_degraded` with distinct level, surface retriable error to worker, do NOT silently create fresh case.
+- **Scope:** `api/classify.ts` restructure of extend-failure branches with explicit failure-mode classification, plus possibly a worker-visible error path. Medium session.
+- **References:** Codex Q6 (`api/classify.ts:355-361, 387-393`; `migration 0014:80-108`).
 - **Closed:** _open_
 
 ### ISS-021 — TOCTOU race in `extend_case_with_document` between existence check and UPDATE
