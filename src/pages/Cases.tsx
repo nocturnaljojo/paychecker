@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { cn } from '@/lib/utils'
 import { useAllCases, type CaseListEntry } from '@/features/cases/useAllCases'
 import {
@@ -18,10 +20,13 @@ import { IdentityIndicator } from '@/components/IdentityIndicator'
  * Updated in Sprint M0.5-BUILD-06 — tap-to-preview wired in.
  * Updated in Sprint M0.5-BUILD-07 — "Change type" inside preview +
  * "(not sure yet)" hint on unconfirmed Other cases.
+ * Updated in Session 012A — soft-delete via trash icon + ConfirmModal
+ * (APP 11.2 compliance).
  *
  * Worker can navigate here from /dashboard ("Your papers" header link)
  * to see their entire case history, override any misclassification,
- * extend a case with more pages, or preview the actual document.
+ * extend a case with more pages, preview the actual document, or
+ * delete a paper they don't want.
  *
  * Sort:
  *   1. Cases needing attention first (draft / suggested status)
@@ -31,11 +36,9 @@ import { IdentityIndicator } from '@/components/IdentityIndicator'
  *   - Tap card body         → PreviewModal (BUILD-06)
  *   - Tap [Change]          → OverrideModal (BUILD-04 optimistic UI)
  *   - Tap [+ Add more pages] → /upload?case={case_id} (extend)
+ *   - Tap [trash]           → ConfirmModal → soft-delete (012A)
  *   - Inside preview: [Change type] → OverrideModal layered on top
  *     (BUILD-07; preview stays open so the new label is visible)
- *
- * NO filters, search, sort options, pagination, delete, or archive in
- * M0.5 per BUILD-04 hard-stop rule.
  */
 
 export default function Cases() {
@@ -48,7 +51,8 @@ export default function Cases() {
 
 function CasesView() {
   const navigate = useNavigate()
-  const { cases, isLoading, hasError, updateCaseLabel } = useAllCases()
+  const { cases, isLoading, hasError, updateCaseLabel, softDeleteCase } =
+    useAllCases()
 
   const sorted = useMemo(() => sortCases(cases), [cases])
   const readyCount = useMemo(
@@ -76,6 +80,27 @@ function CasesView() {
     [cases, overrideFromPreviewCaseId],
   )
   const [previewToast, setPreviewToast] = useState<string | null>(null)
+
+  // Session 012A — soft-delete confirm flow. Page-level state so
+  // the modal lives once and the trash button on each row just sets
+  // the target. Optimistic UI handled inside softDeleteCase.
+  const [pendingDeleteCaseId, setPendingDeleteCaseId] = useState<string | null>(
+    null,
+  )
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [deleteToast, setDeleteToast] = useState<string | null>(null)
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!pendingDeleteCaseId) return
+    setIsDeleting(true)
+    const ok = await softDeleteCase(pendingDeleteCaseId)
+    setIsDeleting(false)
+    setPendingDeleteCaseId(null)
+    if (!ok) {
+      setDeleteToast("Couldn't delete that — try again.")
+      window.setTimeout(() => setDeleteToast(null), 3000)
+    }
+  }, [pendingDeleteCaseId, softDeleteCase])
 
   return (
     <main className="min-h-screen bg-pc-bg text-pc-text">
@@ -125,6 +150,7 @@ function CasesView() {
               onChange={updateCaseLabel}
               onPreview={() => setPreviewCaseId(entry.caseId)}
               onExtend={() => navigate(`/upload?case=${entry.caseId}`)}
+              onRequestDelete={() => setPendingDeleteCaseId(entry.caseId)}
             />
           ))}
         </ul>
@@ -180,6 +206,32 @@ function CasesView() {
           {previewToast}
         </div>
       )}
+
+      {/*
+        Session 012A — soft-delete confirm dialog. Worker vocabulary
+        ("paper") per BUILD-04; "You can't undo this." matches the
+        approved Session 012A copy.
+      */}
+      <ConfirmModal
+        open={pendingDeleteCaseId !== null}
+        title="Delete this paper?"
+        body="You can't undo this."
+        confirmLabel="Delete"
+        onConfirm={handleConfirmDelete}
+        onClose={() => {
+          if (!isDeleting) setPendingDeleteCaseId(null)
+        }}
+        isConfirming={isDeleting}
+      />
+
+      {deleteToast && (
+        <div
+          role="status"
+          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-xl border border-pc-amber-soft bg-pc-amber-soft px-4 py-2 text-pc-caption text-pc-text shadow-pc-modal"
+        >
+          {deleteToast}
+        </div>
+      )}
     </main>
   )
 }
@@ -189,11 +241,13 @@ function CaseRow({
   onChange,
   onPreview,
   onExtend,
+  onRequestDelete,
 }: {
   entry: CaseListEntry
   onChange: (caseId: string, newDocType: string) => Promise<boolean>
   onPreview: () => void
   onExtend: () => void
+  onRequestDelete: () => void
 }) {
   const [overrideOpen, setOverrideOpen] = useState(false)
   const [revertedToast, setRevertedToast] = useState(false)
@@ -275,9 +329,23 @@ function CaseRow({
           >
             + Add more pages
           </button>
-          <Button variant="secondary" onClick={() => setOverrideOpen(true)}>
-            Change
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="secondary" onClick={() => setOverrideOpen(true)}>
+              Change
+            </Button>
+            <button
+              type="button"
+              onClick={onRequestDelete}
+              aria-label={`Delete ${typeLabel}`}
+              className={cn(
+                'rounded-pc-button p-2 text-pc-text-muted transition-colors',
+                'hover:bg-pc-coral-soft hover:text-pc-coral',
+                'focus-visible:outline-none focus-visible:shadow-pc-focus',
+              )}
+            >
+              <Trash2 size={18} strokeWidth={1.75} />
+            </button>
+          </div>
         </div>
 
         {revertedToast && (

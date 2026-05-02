@@ -53,6 +53,7 @@ export type UseAllCasesState = {
   hasError: boolean
   refetch: () => Promise<void>
   updateCaseLabel: (caseId: string, newDocType: string) => Promise<boolean>
+  softDeleteCase: (caseId: string) => Promise<boolean>
 }
 
 export function useAllCases(): UseAllCasesState {
@@ -64,9 +65,15 @@ export function useAllCases(): UseAllCasesState {
   const fetchAll = useCallback(async () => {
     setIsLoading(true)
     setHasError(false)
+    // Session 012A — explicit deleted_at IS NULL filter alongside the
+    // RLS policy (Migration 0018). Belt-and-suspenders: RLS already
+    // hides soft-deleted rows, but the explicit filter makes the
+    // frontend's intent visible to future readers and survives any
+    // downstream RLS policy change.
     const caseResult = await supabase
       .from('document_cases')
       .select('case_id, doc_type, completion_status, created_at, updated_at')
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
     if (caseResult.error) {
       setCases([])
@@ -153,11 +160,39 @@ export function useAllCases(): UseAllCasesState {
     [supabase, cases],
   )
 
+  // Session 012A — soft delete (APP 11.2). Optimistic UI mirrors
+  // updateCaseLabel: snapshot the local list, remove the row
+  // immediately, fire the UPDATE, restore on failure. The DB SELECT
+  // policy now filters deleted_at IS NULL so a refetch would also
+  // hide the row; the local removal just makes the UX instant.
+  //
+  // Storage object is deliberately left in place per Session 012A
+  // hard-stop. Hard-delete cron is separate work.
+  const softDeleteCase = useCallback(
+    async (caseId: string): Promise<boolean> => {
+      const snapshot = cases
+      setCases((prev) => prev.filter((c) => c.caseId !== caseId))
+
+      const result = await supabase
+        .from('document_cases')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('case_id', caseId)
+
+      if (result.error) {
+        setCases(snapshot)
+        return false
+      }
+      return true
+    },
+    [supabase, cases],
+  )
+
   return {
     cases,
     isLoading,
     hasError,
     refetch: fetchAll,
     updateCaseLabel,
+    softDeleteCase,
   }
 }
