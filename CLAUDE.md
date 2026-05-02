@@ -20,10 +20,10 @@ The system NEVER asserts a fact about a worker's employment — it only computes
 ## Stack
 
 - **Frontend:** React + Vite + TypeScript + Tailwind + shadcn/ui
-- **Backend:** FastAPI (Python) — deferred until Phase 1; Phase 0 uses manual calcs / Supabase functions
+- **Backend:** TypeScript Vercel serverless functions (`api/*.ts`) for the classify + extract pipeline; Postgres RPCs for transactional case operations. FastAPI (Python) deferred to Phase 1+ if the calc engine outgrows the 60 s Vercel function ceiling.
 - **Database:** Supabase (AU region — ap-southeast-2 Sydney)
 - **Auth:** Clerk (consistent with CareVoice patterns)
-- **Hosting:** Vercel (frontend), Fly.io (backend, when needed)
+- **Hosting:** Vercel (frontend + `api/*.ts` serverless functions). Fly.io reserved for a Phase 1+ FastAPI backend if needed.
 - **Caching:** Upstash Redis (Phase 1+)
 - **LLM:** Claude API (Anthropic) — extraction only, NEVER in calculations
 - **Payments:** Stripe (Phase 2+)
@@ -56,7 +56,7 @@ Per-action discipline that complements the audit/integration skills. For new-con
 
 Origin: introduced in response to BUILD-11 incidents (assumed `payslip_facts` shape; assumed provenance CHECK constraint accepted `'ocr_suggested'`). These rules exist because the prior audit/integration skills did not catch per-action schema assumptions.
 
-- Do NOT assume schema that is not explicitly confirmed in code. Read the migration files or query the live schema (Supabase MCP `execute_sql`) before referencing tables, columns, or JSON shapes.
+- Do NOT assume schema that is not explicitly confirmed in code. Read the migration files, query the live schema (Supabase MCP `execute_sql`), or grep the relevant source file before referencing tables, columns, JSON shapes, or design-token names.
 - Do NOT introduce new tables, columns, or JSON shapes unless explicitly listed in the session scope.
 - Do NOT refactor existing models unless required to meet acceptance criteria.
 - Do NOT create multiple sources of truth for the same value. If a change would introduce a second representation of an existing fact, STOP and flag it.
@@ -110,12 +110,15 @@ See `docs/architecture/fact-model-v1.md` for the 3-layer model.
 16. Idea-to-Execution workflow — invoke `SKILL-PRJ-idea-to-execution.md` for ANY new idea, feature, or architectural direction. Audit costs minutes; duplication costs hours.
 17. Improvements/polish/small bugs go to `.claude/STATE-PRJ-improvements.md`, NOT `STATE-PRJ-issues.md`.
 18. Worker safety always trumps engineering elegance. If a feature could expose a worker to retaliation from their employer, do not build it without explicit safeguard review.
+19. Plan-format convention for test steps. When writing a /plan, every manual test step must be explicitly tagged with its runner: [Claude-runnable] for DB queries, typecheck, git diff, or static analysis Claude Code can run directly; [Playwright-runnable] for browser interaction, network capture, or DOM inspection; [Supabase-MCP-runnable] for backend log inspection, schema queries, or RLS policy verification; [human-runnable] reserved for genuine human-judgement tasks (visual polish, copy tone, real-device behaviour, accessibility audits). Test ownership is visible in the plan, not discovered at close-out.
 
 ## Skills Registry
 
 | Skill | File | Purpose | Status |
 |---|---|---|---|
 | idea-to-execution | `.claude/skills/SKILL-PRJ-idea-to-execution.md` | Audit-plan-review-execute cycle | Built |
+| architectural-integration | `.claude/skills/SKILL-PRJ-architectural-integration.md` | Audit pipeline-fit before adding new concepts/layers | Built |
+| pressure-test | `.claude/skills/SKILL-PRJ-pressure-test.md` | Pre-build failure-mode surfacing — runs between idea-to-execution steps 4 and 5 | Built |
 | session-start | `.claude/skills/SKILL-PRJ-session-start.md` | Session orientation | Built |
 | session-end | `.claude/skills/SKILL-PRJ-session-end.md` | End session + commit + log | Built |
 | retro | `.claude/skills/SKILL-PRJ-retro.md` | Write session retro | Built |

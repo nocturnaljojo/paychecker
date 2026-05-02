@@ -67,6 +67,14 @@ The only `case` mention in the diff is in a JSDoc code comment explaining the vo
 
 Phase 0 / M0.5 has no explicit soft-delete checkbox (`grep -i 'delete\|deletion\|destroy\|APP 11'` returns no matches in the plan). Nothing to tick. APP 11.2 compliance work was undocumented in the plan; if Phase 0 ever needs an APP-compliance line item, soft-delete is one of the things that satisfies it. Not actioning here.
 
+## Calibration items applied (post-close hygiene pass)
+
+Two calibration items deferred from the 012A close-out were applied in a follow-up CLAUDE.md hygiene commit on the same date. Origin notes recorded here (kept out of CLAUDE.md proper):
+
+- **Guardrail wording extension — design-token names.** The "Do NOT assume schema" rule was extended to also cover design-token names. Origin: `pc-coral-hover` token assumption near-miss in this session — I assumed the token existed in `tokens.css` and Tailwind silently dropped the unknown class at build. Same failure class as schema assumptions; rule should cover it. Cost of catching earlier: one `grep` of `tokens.css` before claiming the class.
+
+- **Plan-format convention — Session Rule 19 (test-step ownership tags).** New rule requires every manual test step in a /plan to be tagged with `[Claude-runnable]` / `[Playwright-runnable]` / `[Supabase-MCP-runnable]` / `[human-runnable]`. Origin: this session deferred all browser-driven test steps to Jovi as "manual" when several could have been Playwright-driven, and the soft-delete bug discovery could have been a Supabase MCP `get_logs` call before any console-log instrumentation. Surfaced when Jovi asked "is Playwright not able to do these tests?" The convention makes test ownership visible at plan time, not discoverable at close-out.
+
 ## Decisions worth remembering
 
 - **RLS as the single enforcement point.** The SELECT policy filtering `deleted_at IS NULL` covers all three frontend SELECT call sites (`useAllCases`, `useWorkerCases`, `useCaseFeedback`) without per-hook code change. `useAllCases` also sends an explicit `.is('deleted_at', null)` filter — redundant with RLS but makes the frontend's intent visible to future readers.
