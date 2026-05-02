@@ -73,6 +73,7 @@ Before writing any code in /build, classify every unknown:
 - Source of truth for any value
 - Whether existing data is immutable or mutable
 - Interaction with audit/history tables or confirmation state
+- RLS policies — quote both `qual` (USING) and `with_check` clauses verbatim from `pg_policies` before claiming a policy is verified. A USING-only check is incomplete and gives false safety. Predicates that look structurally equivalent may evaluate differently at runtime — particularly when policies call functions that read session-local config (`auth.jwt()`, `current_setting()`).
 
 **Implementation unknowns — choose and log:**
 - Component naming, icon choice, copy text
