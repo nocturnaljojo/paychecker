@@ -65,7 +65,7 @@
 
 ### ISS-018 — `extend_case_with_document` RPC + `api/classify.ts` owner check + UploadZone anchor query missing `deleted_at IS NULL`
 - **Severity:** P2 (promoted from ISS-015's original P3 on Codex evidence)
-- **Status:** OPEN
+- **Status:** PARTIALLY-FIXED (load-bearing security boundary closed; UI/orphan/TOCTOU exposure carried forward in ISS-020 + ISS-021)
 - **Found:** Originally as ISS-015 (2026-05-02 by Session 012A plan U3, framed as "stale bookmarks"). Threat model upgraded by Codex adversarial review of 012A.1 (Q3) on 2026-05-02 evening.
 - **Supersedes:** ISS-015. Mark ISS-015 as SUPERSEDED-BY-018; do not keep both as separate active issues.
 - **Threat model upgrade:** Original ISS-015 framed the gap as abstract "stale bookmarks." Codex evidence elevated it to three concrete paths a real worker can hit during normal browsing: (1) browser history, (2) bookmarks, AND (3) already-open `/upload?case=` tabs. The third path is the load-bearing concern — a worker with the upload page open in another tab who deletes a case from `/cases` can immediately attach more documents to the now-deleted case. This is normal browsing pattern, not deliberate URL manipulation. Justifies the P2 bump and next-session priority.
@@ -76,6 +76,45 @@
   - Frontend: `api/classify.ts` — add `deleted_at IS NULL` filter to owner check.
   - Frontend: `UploadZone.tsx:246-250` — add `.is('deleted_at', null)` to the anchor query so the UI does not display a deleted case as an attachment target.
 - **Scope:** One small session. Highest priority of the new findings — close before 012B opens.
+- **Closed:** PARTIALLY-FIXED 2026-05-02 evening by commit `3552dd3` (load-bearing layer: RPC + API + UI all reject deleted-case extends; AC6 verified in production traffic). Remaining exposure carried forward as ISS-020 (Codex Q3 + Q5: stale `?case=` UI state + orphaned classified documents) and ISS-021 (Codex Q6: TOCTOU race between RPC existence check and UPDATE).
+
+### ISS-020 — Stale `?case=` UI state and orphaned classified documents
+- **Severity:** P2
+- **Status:** OPEN
+- **Found:** 2026-05-02 evening by Codex adversarial review of commit `3552dd3` (Q3 + Q5)
+- **Phase:** 0 (post-012A.1.1 follow-up — bundled because both touch the same surface)
+- **Symptom (UI — Q3):** `UploadZone` renders the extend anchor based on `extendingCaseId` from URL (`UploadZone.tsx:52`), not on case existence. The new (012A.1.1) anchor query returns null for deleted cases (`UploadZone.tsx:247-253`) but `VisualAnchor` stays mounted with `isLoading={extendingCase === null}` (`UploadZone.tsx:332-335`). After Vercel deploys 012A.1.1 frontend, a worker who reloads tab A on `/upload?case=<deleted-uuid>` will see a permanently-loading anchor box rather than the standard upload UI degrading cleanly. This is also the post-deploy form of the AC5 test that 012A.1.1 deferred.
+- **Symptom (orphan — Q5):** When the extend path's owner check fails (`api/classify.ts:353-356`), `classify.ts` logs `extend_case_owner_mismatch` and does NOT fall through to `classify_with_case` — that new-case path is in the `else` branch only (`api/classify.ts:342, 376-377`). Result: the document gets classified and stored but ends with `case_id = NULL`, no UI surface, no cleanup. AC6 demonstrated this concretely: document `4e020e86-fc0d-4c67-b8b3-176775b82bfa` (631 bytes, `iss018-test.jpg`) is sitting in worker A's storage right now with `case_id = NULL` and `state = classified`.
+- **Threat:** Each stale `?case=` upload after 012A.1.1 produces one orphan classified document. Storage cost leak, no UI surface to clean up, support confusion if a worker asks "where did my paper go?". Not a security boundary — that's closed by 012A.1.1's RPC defense.
+- **Repro:** With 012A.1.1 frontend deployed: tab A on `/upload?case=<deleted-uuid>`. Anchor query returns null. `VisualAnchor` displays loading state indefinitely. Pick a file. Classify completes. `documents.case_id IS NULL` for the new row.
+- **Proposed fix (one session, two changes, same surface):**
+  1. `UploadZone.tsx`: when the anchor lookup returns null for a non-empty `extendingCaseId`, explicitly clear `extendingCaseId` (or the rendered extension state) so the UI degrades to the standard upload flow rather than rendering a permanently-loading anchor. Render must not be based on URL alone.
+  2. `api/classify.ts`: when the extend path's `ownerCheck` fails, fall through to the `classify_with_case` new-case path rather than returning unlinked. Worker-visible outcome: their document attaches to a fresh case with the right `doc_type`, just not the stale one.
+- **References:** Codex Q3 (`UploadZone.tsx:52, 78, 332-335`), Codex Q5 (`api/classify.ts:336-339, 353-356, 376-377`); AC6 evidence (`documents` row `4e020e86-...`).
+- **Closed:** _open_
+
+### ISS-021 — TOCTOU race in `extend_case_with_document` between existence check and UPDATE
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-02 evening by Codex adversarial review of commit `3552dd3` (Q6)
+- **Phase:** 0 (post-012A.1.1 follow-up — structural improvement)
+- **Symptom:** Migration 0021's RPC body performs the case-existence check and the document UPDATE as separate statements (`0021:69-76` then `0021:87-89`). Under `READ COMMITTED` semantics the case can be soft-deleted in the millisecond window between the existence check passing and the UPDATE running. The UPDATE is unconditional on case state, so a concurrent delete in that window would still link the document.
+- **Threat:** Theoretical. No evidence of real exploitation — would require a worker to delete the case from one tab while a classify request is mid-RPC for the same case from another. Narrow window. Files as P3, structural improvement, not urgent.
+- **Proposed fix:** Single-statement conditional UPDATE that combines validation and link:
+  ```sql
+  UPDATE documents
+  SET case_id = p_case_id
+  WHERE id = p_document_id
+    AND EXISTS (
+      SELECT 1 FROM document_cases
+      WHERE case_id = p_case_id
+        AND worker_id = p_worker_id
+        AND deleted_at IS NULL
+    );
+  ```
+  Atomic. Either the case is still valid at UPDATE time (link succeeds) or it isn't (zero rows). The two existence checks (document ownership + case ownership) collapse into the WHERE clause, eliminating the gap. Migration body only — no API or frontend changes needed.
+- **Scope:** Single small migration, RPC body only. Could optionally also use a row-level lock (`SELECT ... FOR UPDATE`) on the case row, but the WHERE-EXISTS form is simpler and structurally equivalent for this use case.
+- **References:** Codex Q6.
 - **Closed:** _open_
 
 ### ISS-019 — Optimistic soft-delete should verify `count === 1`
