@@ -48,12 +48,54 @@ The system NEVER asserts a fact about a worker's employment — it only computes
    - Gate 1 — re-verify inputs are current
    - Gate 2 — classify gap by size, frequency, confidence
 
+7. **Single source of truth.** Every fact in the system has exactly one canonical location. New representations of an existing fact require an architectural-integration audit before they're added.
+
+## Architecture Guardrails (STRICT)
+
+Per-action discipline that complements the audit/integration skills. For new-concept proposals, also invoke `.claude/skills/SKILL-PRJ-architectural-integration.md`.
+
+Origin: introduced in response to BUILD-11 incidents (assumed `payslip_facts` shape; assumed provenance CHECK constraint accepted `'ocr_suggested'`). These rules exist because the prior audit/integration skills did not catch per-action schema assumptions.
+
+- Do NOT assume schema that is not explicitly confirmed in code. Read the migration files or query the live schema (Supabase MCP `execute_sql`) before referencing tables, columns, or JSON shapes.
+- Do NOT introduce new tables, columns, or JSON shapes unless explicitly listed in the session scope.
+- Do NOT refactor existing models unless required to meet acceptance criteria.
+- Do NOT create multiple sources of truth for the same value. If a change would introduce a second representation of an existing fact, STOP and flag it.
+
+## Unknowns Gate (MANDATORY before any code in /build)
+
+For larger audits, escalate to `.claude/skills/SKILL-PRJ-audit-before-build.md` Pattern 7.
+
+Before writing any code in /build, classify every unknown:
+
+**Architectural unknowns — STOP and ask:**
+- Database schema, table relationships, column types, JSON shapes
+- Where a piece of state lives or which layer owns it
+- Source of truth for any value
+- Whether existing data is immutable or mutable
+- Interaction with audit/history tables or confirmation state
+
+**Implementation unknowns — choose and log:**
+- Component naming, icon choice, copy text
+- Local file organisation when no convention exists
+- Style/colour decisions covered by the design system
+
+If any architectural unknown exists, do not proceed to /build. List it, ask, wait.
+
+## Source of Truth Discipline
+
+See `docs/architecture/fact-model-v1.md` for the 3-layer model.
+
+- Every fact in the system has exactly one source of truth (Architectural Principle 7).
+- Before writing to a field, confirm it is the canonical location for that fact.
+- If extraction produces a value AND a worker can correct it, the schema must make the relationship between original and corrected explicit. Do not silently overwrite.
+- `extraction_jsonb.raw` is immutable. Never write back to it. Never merge corrected values into it. Treat it as a permanent record of what OCR/extraction returned. Worker corrections live outside raw JSON in the approved canonical fact location. Reads from `extraction_jsonb.raw` are permitted for audit, debugging, and re-extraction comparison only — never as the source for displayed or calculated values.
+
 ## Session Rules
 
 1. Always read `docs/retros/LATEST.md` and `.claude/STATE-PRJ-issues.md` at session start.
 2. Use the appropriate skill from `.claude/skills/` for your task type.
 3. NO new feature ideas without invoking `SKILL-PRJ-idea-to-execution.md`.
-4. Audit before adding — never duplicate what already exists.
+4. Audit before adding — never duplicate what already exists. See "Architecture Guardrails (STRICT)" + "Unknowns Gate" above.
 5. Commit per logical chunk, not per session.
 6. Update `.claude/PLAN-PRJ-mvp-phases.md` when phase items complete.
 7. Track session work via `docs/retros/`, never a single SESSIONS.md.
