@@ -9,7 +9,13 @@
 
 Four files, exactly. `git diff --stat HEAD~1 HEAD` verified.
 
-Two commits: `chore(issues): track RPC deleted_at defense-in-depth (from 012A plan U3)` (`f4464aa`) → `feat: soft-delete cases with confirm modal (APP 11.2 compliance)` (`93c66b0`). Plus the prior CLAUDE.md guardrail commit (`6ef2d40`) that landed in the same session window.
+Four commits in the 012A chain:
+1. `6ef2d40` — `chore(claude-md): add architecture guardrails, unknowns gate, source-of-truth discipline (BUILD-11 follow-up)`
+2. `f4464aa` — `chore(issues): track RPC deleted_at defense-in-depth (from 012A plan U3)`
+3. `93c66b0` — `feat: soft-delete cases with confirm modal (APP 11.2 compliance)`
+4. `2f3b266` — `docs(retro): session 012a — soft-delete cases (APP 11.2)` (this file's first version)
+
+Plus a 5th close-out commit (`chore(retro): Session 012A close-out`) that adds the friction assessment + vocabulary audit + PLAN status sections below.
 
 ## Origin
 
@@ -20,6 +26,46 @@ This was the **first session under the new Architecture Guardrails + Unknowns Ga
 - **Live-schema query caught a name drift.** The session brief used `cases` throughout; the actual table is `document_cases`. The Unknowns Gate's "Database schema, table relationships, column types, JSON shapes" item triggered a Supabase MCP `execute_sql` query before any code was written. The drift surfaced in §2 of the plan and was resolved before /build.
 - **U3 surfaced and routed correctly.** The `extend_case_with_document` RPC (migration 0015) doesn't check `deleted_at`. This was caught by the Unknowns Gate but explicitly identified as out of session scope per the spec's hard-stops. Filed as ISS-015 (P3, OPEN) in `.claude/STATE-PRJ-issues.md`. Committed separately before the feature work, as the brief required.
 - **No scope creep.** Hard-stops in the spec (extraction review screen, `payslip_facts`, `extraction_jsonb`, OCR pipeline, calc engine, Clerk, storage, `src/lib/calc/`, SEC-001) all stayed untouched. `git diff --stat HEAD~1 HEAD` shows exactly the four planned files in the feature commit.
+
+## What the guardrails did NOT catch
+
+Honest accounting:
+
+- **`pc-coral-hover` token assumption.** I wrote `hover:!bg-pc-coral-hover` in ConfirmModal without first checking whether that token existed in `tokens.css`. The build broke (well, ran fine — Tailwind silently dropped the unknown class), I noticed visually-tracking that the token was missing, and switched to `hover:opacity-90`. The Architecture Guardrails say "Do NOT assume schema" but only enumerate "tables, columns, JSON shapes" — not design-token names. **Calibration suggestion:** consider extending the Guardrails wording to "tables, columns, JSON shapes, **or design-token names**" since the same class of "I assumed it exists, didn't check, it didn't exist" failure mode applies to both.
+- **Premature retro commit.** I shipped `2f3b266` (the retro) before this close-out spec arrived, which created a 7-file `HEAD~3 HEAD` window instead of the spec's expected 6. Not a guardrail failure exactly — the guardrails don't speak to wrap timing — but it is a workflow miscalibration. The session brief's order-of-operations (`/build` → `/review` → manual test → feature commit → `/wrap`) was clear; I jumped to `/wrap` immediately after the feature commit instead of waiting for the close-out instruction. **Calibration suggestion:** when a session brief has multiple `/wrap`-or-similar steps, treat each as gated by user approval, not as a single sequence I run end-to-end.
+- **Manual test steps 1–7 + 10.** The plan listed these as "manual test steps" but I have no browser-driver. I ran them as "ready to test" rather than passing/failing them. Not a guardrail miss; just a capability boundary worth flagging in future plans so test-step ownership is explicit.
+
+## Friction assessment (calibration data for the new rules)
+
+- **Unknowns Gate did NOT slow me down.** The `cases→document_cases` query took ~5 seconds via Supabase MCP and saved at least 5 minutes of "where's the table" confusion later. Net positive.
+- **No false-positive STOPs.** The Unknowns Gate raised five unknowns; four were architecturally meaningful (U1 name drift; U2 FK behavior; U3 RPC defense-in-depth; U4 UPDATE-then-SELECT semantics under new policy) and one was rule-relevance check (U5 extraction_jsonb immutability — confirmed not relevant). Zero felt like noise.
+- **Architecture Guardrails STRICT rules:** the "Do NOT assume schema" rule was the load-bearing one this session — it mandated the Supabase MCP query that caught the name drift. The other three (no new tables, no refactor, no multiple sources of truth) didn't fire because the spec was already scope-clean.
+- **Source of Truth Discipline:** not exercised this session — soft-delete adds one new column with one canonical writer (the UPDATE call). No conflict.
+- **The schema-vs-token gap noted above** is the only friction-shaped finding. The cost of catching it earlier would be one more grep-tokens.css call before claiming a class. Cheap.
+
+## Vocabulary audit (close-out step 2 result)
+
+Reviewed all user-facing strings introduced in commit `93c66b0`:
+
+| String | Verdict |
+|---|---|
+| `aria-label={title}` (ConfirmModal) | ✓ uses passed `title` = "Delete this paper?" — worker vocabulary |
+| `aria-label={cancelLabel}` | ✓ defaults to "Cancel" — generic |
+| `aria-label={`Delete ${typeLabel}`}` (trash button) | ✓ uses `docTypeLabel()` output ("Payslip", "Contract", etc.) — worker-facing type label, not "case". More specific than generic; better for screen-reader disambiguation between rows. |
+| Toast: "Couldn't delete that — try again." | ✓ no "case" |
+| Modal title: "Delete this paper?" | ✓ "paper" |
+| Modal body: "You can't undo this." | ✓ no "case" |
+| Confirm button: "Delete" | ✓ generic |
+
+The only `case` mention in the diff is in a JSDoc code comment explaining the vocabulary discipline (`"papers" not "payslip cases" in /cases)`). Internal documentation, not user-facing.
+
+**Internal identifiers** (`caseId`, `case_id`, `pendingDeleteCaseId`, `softDeleteCase`, schema column `case_id`, etc.) correctly stay as "case" — that's the schema's name and the type-system's name.
+
+**Verdict: no vocabulary leaks.** No changes needed.
+
+## PLAN-PRJ-mvp-phases.md status
+
+Phase 0 / M0.5 has no explicit soft-delete checkbox (`grep -i 'delete\|deletion\|destroy\|APP 11'` returns no matches in the plan). Nothing to tick. APP 11.2 compliance work was undocumented in the plan; if Phase 0 ever needs an APP-compliance line item, soft-delete is one of the things that satisfies it. Not actioning here.
 
 ## Decisions worth remembering
 
