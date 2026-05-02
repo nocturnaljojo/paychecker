@@ -80,7 +80,7 @@
 
 ### ISS-020 — Stale `?case=` UI state and orphaned classified documents
 - **Severity:** P2
-- **Status:** FIXED-pending-deploy by commit `f792d1f`
+- **Status:** FIXED by commit `f792d1f` (deployed `dpl_GC72FZfMb8sjLB1MLZGreT9CTi5J`, verified 2026-05-02 evening — all 6 post-deploy ACs PASS, orphan `a6a1ea0c-…` deleted from DB)
 - **Found:** 2026-05-02 evening by Codex adversarial review of commit `3552dd3` (Q3 + Q5)
 - **Phase:** 0 (post-012A.1.1 follow-up — bundled because both touch the same surface)
 - **Symptom (UI — Q3):** `UploadZone` renders the extend anchor based on `extendingCaseId` from URL (`UploadZone.tsx:52`), not on case existence. The new (012A.1.1) anchor query returns null for deleted cases (`UploadZone.tsx:247-253`) but `VisualAnchor` stays mounted with `isLoading={extendingCase === null}` (`UploadZone.tsx:332-335`). After Vercel deploys 012A.1.1 frontend, a worker who reloads tab A on `/upload?case=<deleted-uuid>` will see a permanently-loading anchor box rather than the standard upload UI degrading cleanly. This is also the post-deploy form of the AC5 test that 012A.1.1 deferred.
