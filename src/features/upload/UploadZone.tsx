@@ -36,7 +36,7 @@ type CombinedStatus =
 
 export function UploadZone() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const supabase = useSupabaseClient()
   const { state: uploadState, addFiles, startUpload } = useUploadBatch()
   const { entries: classifyEntries, classifyBatch } = useClassifyBatch()
@@ -249,8 +249,27 @@ export function UploadZone() {
         .eq('case_id', extendingCaseId)
         .is('deleted_at', null)
         .maybeSingle()
-      if (cancelled || caseRow.error || !caseRow.data) {
+      if (cancelled) return
+      if (caseRow.error || !caseRow.data) {
         setExtendingCase(null)
+        // ISS-020 Q3: when the case is missing/deleted, clear the stale
+        // ?case= so VisualAnchor unmounts. Render at line ~333 keys on
+        // extendingCaseId (URL); without this clear, extendingCase stays
+        // null forever and the anchor renders in permanent loading state.
+        // replace:true keeps history clean — this is a URL correction,
+        // not a navigation. The new-case path at line ~78 will see the
+        // cleared param on next render and pass undefined to classifyBatch
+        // so the API takes the else branch (classify_with_case) — a
+        // correctness improvement on top of Edit 2's API-side fallback.
+        setSearchParams(
+          (prev) => {
+            if (!prev.has('case')) return prev
+            const next = new URLSearchParams(prev)
+            next.delete('case')
+            return next
+          },
+          { replace: true },
+        )
         return
       }
       const countRow = await supabase
@@ -266,7 +285,7 @@ export function UploadZone() {
     return () => {
       cancelled = true
     }
-  }, [extendingCaseId, supabase])
+  }, [extendingCaseId, supabase, setSearchParams])
 
   // After the extend-classify completes for a fresh upload, refresh
   // the page count so "Page added! Your X now has N pages" reads the

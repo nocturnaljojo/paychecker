@@ -339,6 +339,15 @@ async function handler(request: Request): Promise<Response> {
   const caseDocType = routingStatus === 'failed'
     ? 'other'
     : (TYPE_TO_BUCKET[detectedType] ?? 'other')
+  // ISS-020 Q5: track whether the extend path linked the document. If
+  // the worker arrived via /upload?case=X but the case is missing/deleted/
+  // not-owned (ownerCheck fails) OR the RPC raises (race delete after
+  // ownerCheck), we now fall through to the new-case path below rather
+  // than leaving the document orphaned with case_id=NULL. The classifier
+  // already ran; the document is classified and stored — only the case
+  // linkage was missing. Better to give the worker a fresh case (with
+  // the classifier's doc_type) than an orphan they can't see in /cases.
+  let linked = false
   if (extendCaseId) {
     // Verify case ownership before extending (defence in depth — RPC
     // also checks). Read case's current doc_type so the advisory log
@@ -352,7 +361,7 @@ async function handler(request: Request): Promise<Response> {
       .maybeSingle()
     if (ownerCheck.error || !ownerCheck.data) {
       console.error(
-        `[classify] extend_case_owner_mismatch document_id=${doc.id} case_id=${extendCaseId}`,
+        `[classify] extend_case_owner_mismatch document_id=${doc.id} case_id=${extendCaseId} — falling through to classify_with_case`,
       )
     } else {
       const extendRpc = await supabase.rpc('extend_case_with_document', {
@@ -362,7 +371,7 @@ async function handler(request: Request): Promise<Response> {
       })
       if (extendRpc.error) {
         console.error(
-          `[classify] extend_rpc_error document_id=${doc.id} case_id=${extendCaseId} message=${extendRpc.error.message}`,
+          `[classify] extend_rpc_error document_id=${doc.id} case_id=${extendCaseId} message=${extendRpc.error.message} — falling through to classify_with_case`,
         )
       } else {
         console.log(
@@ -371,9 +380,11 @@ async function handler(request: Request): Promise<Response> {
             `classifier_said=${caseDocType} ` +
             `case_kept=${ownerCheck.data.doc_type ?? 'unknown'}`,
         )
+        linked = true
       }
     }
-  } else {
+  }
+  if (!extendCaseId || !linked) {
     const caseRpc = await supabase.rpc('classify_with_case', {
       p_document_id: doc.id,
       p_worker_id: workerId,
