@@ -339,14 +339,25 @@ async function handler(request: Request): Promise<Response> {
   const caseDocType = routingStatus === 'failed'
     ? 'other'
     : (TYPE_TO_BUCKET[detectedType] ?? 'other')
-  // ISS-020 Q5: track whether the extend path linked the document. If
-  // the worker arrived via /upload?case=X but the case is missing/deleted/
-  // not-owned (ownerCheck fails) OR the RPC raises (race delete after
-  // ownerCheck), we now fall through to the new-case path below rather
-  // than leaving the document orphaned with case_id=NULL. The classifier
-  // already ran; the document is classified and stored — only the case
-  // linkage was missing. Better to give the worker a fresh case (with
-  // the classifier's doc_type) than an orphan they can't see in /cases.
+  // ISS-020 Q5 + ISS-023: track whether the extend path linked the
+  // document.
+  //
+  // Deterministic failures (case missing / soft-deleted / not-owned by
+  // this worker, OR the RPC raises the known case-unavailable exception
+  // because of a race delete since ownerCheck) fall through to the
+  // new-case path below — the worker's stale ?case= URL gets the doc
+  // classified into a fresh case with the classifier's doc_type rather
+  // than an orphan they can't see in /cases. (ISS-020.)
+  //
+  // Infrastructure failures (DB query error on ownerCheck, RPC error
+  // that isn't the known case-unavailable exception) do NOT silently
+  // fall through. We return a retriable response so the worker can
+  // retry — silently materialising a fresh case on a transient blip
+  // hides infrastructure regressions from both the worker and ops.
+  // Conservative default: anything we don't explicitly recognise as
+  // deterministic is treated as transient. False-positive transient
+  // is recoverable (worker retries); false-positive deterministic
+  // ships the bug ISS-023 is fixing. (ISS-023.)
   let linked = false
   if (extendCaseId) {
     // Verify case ownership before extending (defence in depth — RPC
@@ -359,7 +370,38 @@ async function handler(request: Request): Promise<Response> {
       .eq('worker_id', workerId)
       .is('deleted_at', null)
       .maybeSingle()
-    if (ownerCheck.error || !ownerCheck.data) {
+    if (ownerCheck.error) {
+      // INFRASTRUCTURE — DB query failed. We cannot tell whether the
+      // case is unavailable or the database is degraded. Surface a
+      // retriable error; do NOT silently create a fresh case.
+      console.error(
+        `[classify] link_degraded document_id=${doc.id} case_id=${extendCaseId} ` +
+          `cause=owner_check_query message=${ownerCheck.error.message}`,
+      )
+      // ISS-023 retry safety: reset state to 'raw' so the retry path
+      // re-enters cleanly. Without this, state='classifying' is left
+      // stranded and the entry-handler invariant ('classifying' means
+      // in-flight) is violated. See commit body for context.
+      const resetOwner = await supabase
+        .from('documents')
+        .update({ state: 'raw' })
+        .eq('id', doc.id)
+      if (resetOwner.error) {
+        console.error(
+          `[classify] state_reset_failed_owner_check document_id=${doc.id} message=${resetOwner.error.message}`,
+        )
+      }
+      return jsonResponse(503, {
+        error: 'link_degraded',
+        code: 'LINK_DEGRADED',
+        message: 'We had trouble checking that paper. Please try again in a moment.',
+        retryable: true,
+      })
+    }
+    if (!ownerCheck.data) {
+      // DETERMINISTIC — case doesn't exist, isn't owned by this worker,
+      // or has been soft-deleted. Fall through to fresh-case path
+      // (intended ISS-020 behaviour).
       console.error(
         `[classify] extend_case_owner_mismatch document_id=${doc.id} case_id=${extendCaseId} — falling through to classify_with_case`,
       )
@@ -370,9 +412,42 @@ async function handler(request: Request): Promise<Response> {
         p_case_id: extendCaseId,
       })
       if (extendRpc.error) {
-        console.error(
-          `[classify] extend_rpc_error document_id=${doc.id} case_id=${extendCaseId} message=${extendRpc.error.message} — falling through to classify_with_case`,
-        )
+        if (isExtendCaseUnavailableError(extendRpc.error)) {
+          // DETERMINISTIC — RPC raised the case-unavailable exception
+          // (migration 0021). Race: case was soft-deleted between
+          // ownerCheck and the RPC. Fall through to fresh-case path.
+          console.error(
+            `[classify] extend_rpc_case_unavailable document_id=${doc.id} ` +
+              `case_id=${extendCaseId} message=${extendRpc.error.message} — ` +
+              `falling through to classify_with_case`,
+          )
+        } else {
+          // INFRASTRUCTURE — RPC failed for a reason we don't recognise
+          // as deterministic (transport, function-not-found, doc-
+          // ownership race, unknown PG error). Surface a retriable
+          // error; do NOT silently create a fresh case.
+          console.error(
+            `[classify] link_degraded document_id=${doc.id} case_id=${extendCaseId} ` +
+              `cause=extend_rpc message=${extendRpc.error.message}`,
+          )
+          // ISS-023 retry safety: reset state to 'raw' so the retry path
+          // re-enters cleanly. Same rationale as the ownerCheck.error arm.
+          const resetRpc = await supabase
+            .from('documents')
+            .update({ state: 'raw' })
+            .eq('id', doc.id)
+          if (resetRpc.error) {
+            console.error(
+              `[classify] state_reset_failed_extend_rpc document_id=${doc.id} message=${resetRpc.error.message}`,
+            )
+          }
+          return jsonResponse(503, {
+            error: 'link_degraded',
+            code: 'LINK_DEGRADED',
+            message: 'We had trouble linking that paper. Please try again in a moment.',
+            retryable: true,
+          })
+        }
       } else {
         console.log(
           `[classify] case_extended_advisory document_id=${doc.id} ` +
@@ -474,6 +549,22 @@ async function handler(request: Request): Promise<Response> {
 // ─────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────
+
+// Detect the known deterministic raise from extend_case_with_document
+// (migration 0021):
+//   'extend_case_with_document: case % not owned by worker %
+//     or has been deleted'
+// Conservative: require BOTH the function name AND the deterministic
+// suffix so any error shape we don't recognise (transport error,
+// document-ownership-race raise from the same RPC, function-not-found,
+// unknown PG error) is treated as transient by the caller. ISS-023.
+function isExtendCaseUnavailableError(err: { message?: string } | null): boolean {
+  if (!err) return false
+  const msg = (err.message ?? '').toLowerCase()
+  return msg.includes('extend_case_with_document: case ') &&
+    msg.includes('not owned by worker') &&
+    msg.includes('has been deleted')
+}
 
 type EnvOk = {
   anthropicApiKey: string
