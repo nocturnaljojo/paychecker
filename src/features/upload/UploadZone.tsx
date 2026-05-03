@@ -33,6 +33,7 @@ type CombinedStatus =
   | 'auto_routed'
   | 'review_pending'
   | 'consent_required' // server-side ISS-006 gate fired (post-mount edge case)
+  | 'link_degraded' // 503 LINK_DEGRADED — transient infra blip on extend path (ISS-022 / ISS-023)
 
 export function UploadZone() {
   const navigate = useNavigate()
@@ -141,8 +142,20 @@ export function UploadZone() {
     (counts.auto_routed > 0 ||
       counts.review_pending > 0 ||
       counts.failed > 0 ||
-      counts.consent_required > 0)
+      counts.consent_required > 0 ||
+      counts.link_degraded > 0)
   const consentRequiredCount = counts.consent_required
+  const linkDegradedCount = counts.link_degraded
+  // ISS-022: surface the server's response-body message verbatim so wording
+  // stays server-controlled (single source of truth in api/classify.ts). If
+  // multiple link_degraded rows are present, take the first non-empty reason
+  // — they're all coming from the same response shape so first-wins is fine.
+  const linkDegradedMessage = useMemo(() => {
+    for (const c of classifyEntries) {
+      if (c.status === 'link_degraded' && c.reason) return c.reason
+    }
+    return null
+  }, [classifyEntries])
 
   // ADR-014 / Sprint M0.5-BUILD-01 — collect document IDs whose classify
   // pass has finished, so the case-feedback hook can read their cases.
@@ -353,6 +366,19 @@ export function UploadZone() {
             docType={extendingCase?.docType ?? null}
             isLoading={extendingCase === null}
           />
+        )}
+
+        {linkDegradedCount > 0 && (
+          <div
+            role="alert"
+            className="mb-4 rounded-2xl border border-pc-amber-soft bg-pc-amber-soft p-4 text-pc-caption text-pc-text"
+          >
+            <p className="font-medium">Try uploading again</p>
+            <p className="mt-1">
+              {linkDegradedMessage ??
+                "We couldn't reach the server. Try again in a moment."}
+            </p>
+          </div>
         )}
 
         {consentRequiredCount > 0 && (
@@ -647,6 +673,7 @@ function StatusPill({ status }: { status: CombinedStatus }) {
     review_pending: { label: 'Needs your check', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
     failed: { label: 'Couldn\'t read', className: 'bg-pc-coral-soft text-[#7A3B33]' },
     consent_required: { label: 'Privacy setup first', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
+    link_degraded: { label: 'Try again', className: 'bg-pc-amber-soft text-[#7A5A1E]' },
   }
   const { label, className } = map[status]
   return (
@@ -674,6 +701,7 @@ function countByCombinedStatus(rows: DisplayRow[]): CombinedCounts {
     review_pending: 0,
     failed: 0,
     consent_required: 0,
+    link_degraded: 0,
   }
   for (const r of rows) counts[r.combinedStatus] += 1
   return counts
@@ -684,6 +712,7 @@ function summarise(counts: CombinedCounts): string {
   if (counts.auto_routed) parts.push(`${counts.auto_routed} saved`)
   if (counts.review_pending) parts.push(`${counts.review_pending} need check`)
   if (counts.consent_required) parts.push(`${counts.consent_required} privacy setup`)
+  if (counts.link_degraded) parts.push(`${counts.link_degraded} to retry`)
   if (counts.duplicate) parts.push(`${counts.duplicate} dupes`)
   if (counts.failed) parts.push(`${counts.failed} failed`)
   if (counts.uploading || counts.pending || counts.uploaded || counts.reading) {

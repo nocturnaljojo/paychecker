@@ -359,6 +359,13 @@ async function handler(request: Request): Promise<Response> {
   // is recoverable (worker retries); false-positive deterministic
   // ships the bug ISS-023 is fixing. (ISS-023.)
   let linked = false
+  // ISS-022 Q2: track whether the new-case path is reached as a deterministic
+  // fall-through from a failed extend attempt. When set to 'extend_fallback'
+  // and classify_with_case ALSO fails, the case_rpc_error log surfaces the
+  // structured `link_attempt` discriminant + extend_case_id so ops can
+  // distinguish "no extend ever attempted" from "extend deterministically
+  // failed → fallback also failed". Logging only — no behaviour change.
+  let linkAttempt: 'none' | 'extend_fallback' = 'none'
   if (extendCaseId) {
     // Verify case ownership before extending (defence in depth — RPC
     // also checks). Read case's current doc_type so the advisory log
@@ -402,6 +409,7 @@ async function handler(request: Request): Promise<Response> {
       // DETERMINISTIC — case doesn't exist, isn't owned by this worker,
       // or has been soft-deleted. Fall through to fresh-case path
       // (intended ISS-020 behaviour).
+      linkAttempt = 'extend_fallback'
       console.error(
         `[classify] extend_case_owner_mismatch document_id=${doc.id} case_id=${extendCaseId} — falling through to classify_with_case`,
       )
@@ -416,6 +424,7 @@ async function handler(request: Request): Promise<Response> {
           // DETERMINISTIC — RPC raised the case-unavailable exception
           // (migration 0021). Race: case was soft-deleted between
           // ownerCheck and the RPC. Fall through to fresh-case path.
+          linkAttempt = 'extend_fallback'
           console.error(
             `[classify] extend_rpc_case_unavailable document_id=${doc.id} ` +
               `case_id=${extendCaseId} message=${extendRpc.error.message} — ` +
@@ -467,7 +476,18 @@ async function handler(request: Request): Promise<Response> {
       p_completion_status: 'suggested',
     })
     if (caseRpc.error) {
-      console.error(`[classify] case_rpc_error document_id=${doc.id} message=${caseRpc.error.message}`)
+      // ISS-022 Q2: structured metadata so ops can distinguish a clean
+      // fresh-case failure (link_attempt=none) from a compound failure
+      // where extend deterministically fell through and the fallback
+      // also failed (link_attempt=extend_fallback). The latter is the
+      // worst-case worker-visible state — they get a normal classify
+      // response but documents.case_id ends up NULL.
+      console.error(
+        `[classify] case_rpc_error document_id=${doc.id} ` +
+          `link_attempt=${linkAttempt} ` +
+          `extend_case_id=${extendCaseId ?? 'none'} ` +
+          `classify_failure_reason=${caseRpc.error.message}`,
+      )
     } else {
       console.log(`[classify] case_created case_id=${caseRpc.data} doc_type=${caseDocType} completion_status=suggested`)
     }

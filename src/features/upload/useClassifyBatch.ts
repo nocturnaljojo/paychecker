@@ -14,6 +14,7 @@ export type ClassifyStatus =
   | 'review_pending'
   | 'failed'
   | 'consent_required'
+  | 'link_degraded'
 
 export type ClassifyEntry = {
   documentId: string
@@ -21,6 +22,7 @@ export type ClassifyEntry = {
   detectedType?: string
   classificationId?: string
   reason?: string
+  retryable?: boolean
 }
 
 type ClassifyResponse =
@@ -118,7 +120,7 @@ async function classifyOne(
     })
     if (!response.ok) {
       const errBody = (await safeJson(response)) as
-        | { error?: string; message?: string }
+        | { error?: string; message?: string; code?: string; retryable?: boolean }
         | null
       // 403 + error='consent_required' is the ISS-006 server-side gate.
       // Surface as a distinct status so UploadZone can show the recovery
@@ -127,6 +129,22 @@ async function classifyOne(
         updateEntry(setEntries, documentId, {
           status: 'consent_required',
           reason: errBody.message ?? 'Privacy setup needs finishing first.',
+        })
+        return
+      }
+      // ISS-022 (Codex C2/C4): 503 LINK_DEGRADED is a transient infrastructure
+      // failure on the extend path (api/classify.ts ownerCheck.error or
+      // extendRpc-other-than-case-unavailable per the ISS-023 split). Server
+      // includes a worker-safe `message` and `retryable: true`. UploadZone
+      // renders an amber 'Try again' pill + banner instead of the generic
+      // 'Couldn't read' card. Strict guard on `code === 'LINK_DEGRADED'` so
+      // any future 503 with a different shape still falls through to the
+      // generic failed handler below.
+      if (response.status === 503 && errBody?.code === 'LINK_DEGRADED') {
+        updateEntry(setEntries, documentId, {
+          status: 'link_degraded',
+          reason: errBody.message ?? "We couldn't reach the server. Try again in a moment.",
+          retryable: errBody.retryable ?? true,
         })
         return
       }
