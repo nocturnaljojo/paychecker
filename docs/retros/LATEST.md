@@ -2,4 +2,4 @@
 # Pointer to the most recent session retro. Update this with every retro.
 # Read this file at session start — it tells you which retro to read next.
 
-→ `2026-05-02-s012a1-rls-soft-delete-fix.md`
+→ `2026-05-03-s013-build11-smoke-verification.md`
