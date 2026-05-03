@@ -96,7 +96,7 @@
 - **Test artefact disposition (per Codex Q8):** orphan document `a6a1ea0c-0577-42ad-b002-db4133bc5c44` (created during this session's Q5 repro on 2026-05-02 13:26:42Z, worker A `85e2e02f-…`, `case_id = NULL`, `state = routed`, `doc_type = payslip`, `content_hash = 5af1b66483…`) — DECISION: DELETE via Supabase MCP after final close-out. Reasoning: synthetic test artefact (`mock_payslipV3.pdf` was a base64-generated PDF with appended freshness comment; no real worker data, no PII, no Privacy Act obligation). Retention has no operational value — V4+ generation is trivial via the same byte-append technique. Cleanest end-state for production data.
 
 ### ISS-022 — Compound-failure logging + fallback case creation UX copy
-- **Severity:** P3
+- **Severity:** P2 (bumped from P3 — see hard dependency note)
 - **Status:** OPEN
 - **Found:** 2026-05-02 evening by Codex adversarial review of commit `af30d25` (Q2 + Q5)
 - **Phase:** 0 (post-012A.1.2 follow-up — bundled because both touch the same surface: classify.ts logging + UploadZone/feedback UI copy)
@@ -108,11 +108,12 @@
   - Adjust no-case fallback copy in `useCaseFeedback` to avoid implying case creation succeeded when it didn't.
 - **Scope:** Single small session, ~3 file touches (`api/classify.ts` logging + `UploadZone` or feedback toast component + copy file if separate).
 - **References:** Codex Q2 (`api/classify.ts:387-399, 401-471`), Codex Q5 (`api/classify.ts:339-341, 387-393`).
+- **Hard dependency on ISS-023 (per Codex C2 review of commit `4172211`, 2026-05-03 morning):** ISS-023 introduced 503 LINK_DEGRADED responses with `code`/`retryable` fields, but `useClassifyBatch.ts:155-165` only reads `{ error, message }` from error responses, ignoring `code` and `retryable`. `UploadZone.tsx:210-230` renders BUILD-09 "Couldn't read this clearly" card for ALL non-2xx responses regardless of error type. Until ISS-022 lands, ISS-023's UX intent is unfulfilled — workers see "couldn't read" (deterministic-sounding) for transient infrastructure failures (opposite of intent). Pre-patch behaviour was strictly worse (silent fresh case with no error indication), so post-patch is improvement, but UX completeness requires ISS-022. Priority bumped P3 → P2 accordingly.
 - **Closed:** _open_
 
 ### ISS-023 — Overbroad extend-failure fallback hides real errors
 - **Severity:** P2
-- **Status:** OPEN
+- **Status:** FIXED-pending-ISS-022 by commit `4172211` (deployed `dpl_7mH3uWiLADHTwUDjd6en4CVHAZ2j`, verified 2026-05-03 morning — falsification smoke PASS, regression mitigated)
 - **Found:** 2026-05-02 evening by Codex adversarial review of commit `af30d25` (Q6)
 - **Phase:** 0 (post-012A.1.2 follow-up — structural improvement)
 - **Symptom:** ISS-020's fix collapsed all extend-failure modes (`ownerCheck.error`, `!ownerCheck.data`, `extendRpc.error`) into a single "fall through to `classify_with_case`" path. Real DB errors and transient RPC failures now silently create fresh cases instead of surfacing retriable errors to workers. Worker has no way to distinguish "case truly unavailable" from "transient infrastructure issue, please retry."
@@ -122,6 +123,50 @@
   - DB query error or RPC raise on transient infrastructure → log `link_degraded` with distinct level, surface retriable error to worker, do NOT silently create fresh case.
 - **Scope:** `api/classify.ts` restructure of extend-failure branches with explicit failure-mode classification, plus possibly a worker-visible error path. Medium session.
 - **References:** Codex Q6 (`api/classify.ts:355-361, 387-393`; `migration 0014:80-108`).
+- **Codex review (2026-05-03 morning):** Adversarial review of commit `2ffaaaa` surfaced 4 genuine concerns + 3 minor:
+  - **Challenge 3 (state-machine re-entry on early 503)** verified empirically: `documents.state` stranded at `'classifying'` on retry → re-runs Anthropic + creates duplicate `document_classifications` row (no unique constraint at DB level — verified). Mitigated by amend (`2ffaaaa` → `4172211`): `state` reset to `'raw'` before each early 503 return. Post-deploy falsification smoke confirms mitigation works.
+  - **Challenges 1 + 5 (string coupling)** → ISS-024 filed.
+  - **Challenge 2 (worker UX gap)** → ISS-022 priority bumped P3→P2 with hard dependency note.
+  - **Challenges 4, 6, 7 minor:** Challenge 4 folds into ISS-024, Challenge 6 (CAL-005 classification) holds as `harden:`, Challenge 7 falsification curl documented below.
+  - **Challenge 8 (production log claim)** → INTEGRITY CORRECTION below.
+- **Falsification smoke evidence (2026-05-03 04:10:09Z post-deploy of `4172211`):**
+  - Test target: `documents` row `6d0303e0-…` (`state='raw'`, existing untouched real document, `image/jpeg`)
+  - Request: `POST /api/classify` with `{ document_id: '6d0303e0-…', case_id: 'not-a-uuid' }` via authenticated browser session (note: API field name is `case_id`, not `extend_case_id`)
+  - Response: `503` with body `{ error: 'link_degraded', code: 'LINK_DEGRADED', message: 'We had trouble checking that paper. Please try again in a moment.', retryable: true }` ✓
+  - Post-call `documents.state` for `6d0303e0-…`: `'raw'` (state-reset confirmed) ✓
+  - Post-call `document_classifications` row count for `6d0303e0-…`: 1 (the smoke-induced first attempt; cleaned up post-test) ✓
+  - All three Codex Challenge 7 verification points PASS.
+  - Cleanup: deleted smoke-induced `document_classifications` row to restore baseline. Confirmed 12 docs / 10 classifications / 4 payslip_facts / 4 active cases unchanged.
+- **Falsification curl (per Codex Challenge 7):**
+  ```
+  curl -X POST https://paychecker-three.vercel.app/api/classify \
+    -H "Authorization: Bearer <CLERK_JWT>" \
+    -H "Content-Type: application/json" \
+    -d '{"document_id":"<UPLOADED_DOC_ID>","case_id":"not-a-uuid"}'
+  ```
+  Expected: 503 with body `{ error: 'link_degraded', code: 'LINK_DEGRADED', message: '...', retryable: true }`. Post-call: `SELECT state FROM documents WHERE id='<UPLOADED_DOC_ID>'` → `'raw'`.
+- **INTEGRITY CORRECTION (per Codex Challenge 8):** The commit body of `4172211` references "47 successful extensions, 0 failures of any kind logged in the last 7 days" as production state. Post-push verification (2026-05-03 morning) found this **unsupported by Vercel runtime logs**. Actual query results (project paychecker, 7d window 2026-04-26 → 2026-05-03):
+  - 0 `case_extended_advisory` entries
+  - 0 `extend_case_owner_mismatch` entries
+  - 0 `extend_rpc_error` entries
+  - 0 `case_created` entries
+  - 1 `[classify]` log entry (the falsification smoke at 04:10:09Z 2026-05-03)
+
+  Honest production state: PayChecker is solo-Jovi at present; the extend flow has not been exercised in production traffic in the 7d window. The pre-patch failure modes were structurally certain (code reading) but never observed in either direction (no successful extensions, no failed ones). The `harden:` classification holds — arguably more strongly under this revised understanding: structural narrowing for a code path with **zero** production exposure. Post-deploy falsification smoke IS the empirical validation; the pre-deploy "47 successes" figure was an unsupported prior that should not have been quoted into the commit body.
+
+  Pattern flag for next CLAUDE.md hygiene window (CAL-006 candidate): quantitative production claims should be sourced from verifiable queries, not inferred from prior conversation. Today's claim survived multiple review passes because no one ran the actual log query until post-push. **Do not action today.**
+- **Closed:** FIXED-pending-ISS-022 2026-05-03 morning by commit `4172211` (deployed `dpl_7mH3uWiLADHTwUDjd6en4CVHAZ2j`). Full UX intent unblocks when ISS-022 lands. Production data integrity correction recorded above per Codex Challenge 8.
+
+### ISS-024 — Extract structured error discriminant from extend_case_with_document RPC
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-03 morning by Codex adversarial review of commit `2ffaaaa` (Challenges 1 + 4 + 5)
+- **Phase:** 0 (post-ISS-023 follow-up — structural improvement)
+- **Symptom:** `isExtendCaseUnavailableError` in `api/classify.ts` does case-insensitive substring matching on three fragments tied to migration `0021`'s exception text. Future migrations adding new deterministic exception branches (e.g., "case archived", "worker suspended") would default to infrastructure → 503 LINK_DEGRADED → worker retries → same exception fires → visible retry loop.
+- **Threat:** Hidden coupling between migration `0021` prose and `api/classify.ts` helper. Compiler cannot enforce that future migration authors update the helper. Manifests as worker-facing retry loops on deterministic failures.
+- **Proposed fix:** Expose stable machine-readable discriminant from the RPC: custom SQLSTATE (e.g., P0002), structured DETAIL field, or sentinel column in RPC return. Update `isExtendCaseUnavailableError` to match on that code instead. Remove prose coupling. Also extend client `useClassifyBatch` error type to read `code`/`retryable` from error responses (Codex Challenge 4 same-root).
+- **Scope:** Migration adding SQLSTATE or sentinel + helper update + client error type update. Single small-medium session.
+- **References:** Codex Challenges 1 + 4 + 5 (`api/classify.ts:528-540`, `useClassifyBatch.ts:155-165`, `supabase/migrations/0021:69-85`).
 - **Closed:** _open_
 
 ### ISS-021 — TOCTOU race in `extend_case_with_document` between existence check and UPDATE
