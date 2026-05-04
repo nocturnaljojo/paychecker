@@ -97,7 +97,7 @@
 
 ### ISS-022 — Compound-failure logging + fallback case creation UX copy
 - **Severity:** P2 (bumped from P3 — see hard dependency note)
-- **Status:** OPEN
+- **Status:** FIXED-with-known-followups by commit `51b83f6` (deployed `dpl_4CcZESMS9RwJoVLYXB5nwHRjNUrQ`, 2026-05-03 evening)
 - **Found:** 2026-05-02 evening by Codex adversarial review of commit `af30d25` (Q2 + Q5)
 - **Phase:** 0 (post-012A.1.2 follow-up — bundled because both touch the same surface: classify.ts logging + UploadZone/feedback UI copy)
 - **Symptom (Q2 — compound failure):** When extend fails AND `classify_with_case` also fails, code logs `case_rpc_error` but continues into normal classify response path (`api/classify.ts:387-399, 401-471`). Worker-visible outcome is functionally the same as the original ISS-020 orphan, but the UI implies a case was surfaced when none was. Not a security or data-integrity issue — a product-truthfulness gap.
@@ -109,7 +109,13 @@
 - **Scope:** Single small session, ~3 file touches (`api/classify.ts` logging + `UploadZone` or feedback toast component + copy file if separate).
 - **References:** Codex Q2 (`api/classify.ts:387-399, 401-471`), Codex Q5 (`api/classify.ts:339-341, 387-393`).
 - **Hard dependency on ISS-023 (per Codex C2 review of commit `4172211`, 2026-05-03 morning):** ISS-023 introduced 503 LINK_DEGRADED responses with `code`/`retryable` fields, but `useClassifyBatch.ts:155-165` only reads `{ error, message }` from error responses, ignoring `code` and `retryable`. `UploadZone.tsx:210-230` renders BUILD-09 "Couldn't read this clearly" card for ALL non-2xx responses regardless of error type. Until ISS-022 lands, ISS-023's UX intent is unfulfilled — workers see "couldn't read" (deterministic-sounding) for transient infrastructure failures (opposite of intent). Pre-patch behaviour was strictly worse (silent fresh case with no error indication), so post-patch is improvement, but UX completeness requires ISS-022. Priority bumped P3 → P2 accordingly.
-- **Closed:** _open_
+- **Codex review (2026-05-03 evening):** Adversarial review of commit `51b83f6` surfaced 3 genuine concerns + 3 minor + code-read found 1 additional issue:
+  - Challenge 1 (banner ordering), Challenge 4 (copy redundancy), Challenge 6 (first-wins message) → **ISS-026** filed (cosmetic).
+  - Challenge 7 (retry blocked by dedup guard) → **ISS-027** filed (P2 genuine bug, ISS-022's UX intent unfulfilled until this lands).
+  - Code-read surfaced shallow-patch stale-reason issue → **ISS-028** filed (bundle with ISS-027).
+  - Q5 (fresh-case-from-fallback toast) → **ISS-025** filed.
+  - CAL-005 classification: `harden:` held. Falsification smoke deferred to ISS-027 session (no point smoking a retry feature that's known broken).
+- **Closed:** FIXED-with-known-followups 2026-05-03 evening by commit `51b83f6` (deployed `dpl_4CcZESMS9RwJoVLYXB5nwHRjNUrQ`). Load-bearing improvement shipped (better logging structure, distinguishable error code in DOM). Full UX intent unblocks when ISS-027 + ISS-028 ship. ISS-026 cosmetic + ISS-025 Q5 toast tracked separately.
 
 ### ISS-023 — Overbroad extend-failure fallback hides real errors
 - **Severity:** P2
@@ -410,6 +416,56 @@
 - **Impact:** Any new user who lands on /upload before completing onboarding (or whose worker resolution failed transiently) got a broken experience. Apete-shaped failure mode on day one.
 - **Fix:** **Option (a) AUTO-CREATE + caller/UI hardening.** `ensureWorker()` keeps auto-create (already schema-safe — only `clerk_user_id` is NOT NULL without default; `tier` defaults to `'palm_free'`, `preferred_language` to `'en'`); thrown errors now wrap with worker-friendly prefix. `useUploadBatch.startUpload()` now marks all queued `'pending'` files as `'failed'` with `error: "Account not ready — try refreshing"` when worker resolution failed, so the row pill flips from "Waiting" to "Couldn't read" instead of hanging silently. `UploadZone` now disables the upload buttons when `workerError` is set (not just `isResolvingWorker`), and the error banner uses worker-friendly copy ("We couldn't set up your upload area — try refreshing"). Onboarding flow + consent_records gate untouched (Sprint 7 unchanged).
 - **Closed:** 2026-04-30 by Sprint B1.5 commit (see git log).
+
+### ISS-025 — Fresh-case-from-fallback worker toast (Q5 deferral from ISS-022)
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-03 evening (deferred from ISS-022 plan scope)
+- **Phase:** 0 (post-ISS-022 follow-up)
+- **Symptom:** When the deterministic extend-failure fall-through fires (case truly deleted/missing → fresh case created with classifier's `doc_type`), worker gets a fresh case with no toast explaining "your original case was unavailable, document saved to a new case."
+- **Threat:** Worker confusion when their stale `?case=` URL silently produces a different case than expected. No data loss, but a UX truthfulness gap.
+- **Proposed fix:** Add `link_attempt: 'extend_fallback'` field to `api/classify.ts` SUCCESS response (currently only logged, not returned). Client `useClassifyBatch` reads it, dispatches to a new `ClassifyEntry` field. `UploadZone` or `CaseFeedbackPanel` renders a toast on detection.
+- **Scope:** `api/classify.ts` response shape extension + client decode + UI surface (toast or banner). ~3-file touches, single small session.
+- **References:** Original ISS-022 plan Q5 deferral (2026-05-03 evening); `api/classify.ts:339-432` (extend block).
+- **Closed:** _open_
+
+### ISS-026 — Banner ordering + copy redundancy + first-wins message (Codex ISS-022 cosmetic)
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-03 evening by Codex adversarial review of commit `51b83f6` (Challenges 1, 4, 6)
+- **Phase:** 0 (post-ISS-022 cosmetic follow-up)
+- **Symptom (C1):** When both `consent_required` and `link_degraded` banners fire simultaneously, `link_degraded` renders ABOVE `consent_required`. Privacy setup is the prerequisite and should appear above retry guidance.
+- **Symptom (C4):** Banner heading "Try uploading again" + body ending with retry instruction = duplicate call to action. Amber styling identical to consent banner risks visual blur.
+- **Symptom (C6):** `linkDegradedMessage` `useMemo` returns first non-empty `reason`. In a batch with multiple `link_degraded` files receiving DIFFERENT messages (ownerCheck vs extendRpc paths), only one renders while multiple "Try again" pills show.
+- **Proposed fix:** Reorder consent above `link_degraded` (or suppress `link_degraded` banner when `consent_required > 0`). Trim banner copy to remove redundant retry CTA. Use generic banner message when `linkDegradedCount > 1`, or aggregate distinct messages.
+- **Scope:** `UploadZone.tsx` only, ~10-15 lines across the three changes.
+- **References:** Codex Challenges 1, 4, 6 from review of commit `51b83f6`.
+- **Closed:** _open_
+
+### ISS-027 — `link_degraded` retry blocked by `queuedClassifyRef` + content-hash dedup (Codex C7 — genuine bug)
+- **Severity:** P2 (genuine functional bug, but on dormant code path until extend traffic appears)
+- **Status:** OPEN
+- **Found:** 2026-05-03 evening by Codex adversarial review of commit `51b83f6` (Challenge 7)
+- **Phase:** 0 (post-ISS-022 follow-up)
+- **Symptom:** Worker hits 503 LINK_DEGRADED → sees "Try again" pill + banner → re-uses file picker → `useUploadBatch.addFiles` creates new `FileEntry` → `uploadDocument` server-side dedup keys on `(worker_id, content_hash)` and returns `existingDocumentId` pointing at the SAME `documentId` from first attempt → `UploadZone` chain effect at lines 63-80 sees `queuedClassifyRef.current.has(docId) === true` → skips `classifyBatch` → stale `link_degraded` entry persists forever. The retry the patch enables is silently blocked.
+- **Threat:** ISS-022's UX intent ("try again") is unfulfilled — the action the worker takes does nothing. Worker sees "Try again" indefinitely.
+- **Proposed fix:** Modify chain effect to bypass `queuedClassifyRef.has()` guard when the existing classify entry is `{ status: 'link_degraded', retryable: true }`. Add `classifyEntries` to dep array (currently missing — separate stale-closure bug). Estimated ~10-15 lines in `UploadZone.tsx`.
+- **Bundle with:** ISS-028 (clear stale `reason`/`retryable` on terminal success transitions) — both touch retry-flow correctness and should ship together.
+- **Scope:** `UploadZone.tsx` + `useClassifyBatch.ts`, ~25 lines combined with ISS-028.
+- **References:** Codex Challenge 7 from review of commit `51b83f6`; `useUploadBatch.ts` `addFiles` (no dedup), `src/lib/upload.ts:127-198` `uploadDocument` (server-side dedup), `UploadZone.tsx:63-80` (chain effect), `useClassifyBatch.ts:58-64` (`Map.set` seeding handles entry replacement).
+- **Closed:** _open_
+
+### ISS-028 — Stale `reason`/`retryable` on terminal success transitions (Codex-adjacent — surfaced by code-read)
+- **Severity:** P3
+- **Status:** OPEN
+- **Found:** 2026-05-03 evening by Claude Code's pre-amend code-read of `useClassifyBatch.ts` (during ISS-022 review, not in Codex output directly)
+- **Phase:** 0 (post-ISS-022 follow-up)
+- **Symptom:** `useClassifyBatch.ts` `updateEntry` at lines 180-188 is a shallow patch — spreads existing entry, overlays patch fields. On terminal success transition (`auto_routed` or `review_pending`), the patch sets `status` + `detectedType`/`classificationId` but does NOT clear `reason` or `retryable` from prior `link_degraded` state. `StatusPill` keys off `status` (no visible bug there) but row inline `errorMessage` pulls from `classifyEntry.reason` via `mergeRows` — would render stale "We had trouble checking that paper..." text next to a green "Saved" pill.
+- **Threat:** Worker sees contradictory UI state on successful retry — "Saved" pill + stale error message in same row.
+- **Proposed fix:** In `updateEntry`, when `patch.status` is in terminal-success set (`'auto_routed'` | `'review_pending'`), explicitly clear `reason` and `retryable`. Estimated ~5 lines in `useClassifyBatch.ts`.
+- **Bundle with:** ISS-027 (same retry-flow surface).
+- **References:** Code-read of `useClassifyBatch.ts:180-188` during ISS-022 amend planning, 2026-05-03 evening.
+- **Closed:** _open_
 
 ## Closed issues
 
