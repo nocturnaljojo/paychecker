@@ -467,6 +467,79 @@
 - **References:** Code-read of `useClassifyBatch.ts:180-188` during ISS-022 amend planning, 2026-05-03 evening.
 - **Closed:** _open_
 
+### ISS-029 — calc-rules-v01.md cites nonexistent FWC clause cl 19.7 (Rule 9)
+- **Severity:** P1
+- **Status:** OPEN
+- **Found:** 2026-05-04 by Codex Pass 2 adversarial review
+- **Phase:** 0 (calc engine prerequisite)
+- **Symptom:** Rule 9 (rest period after overtime) in `docs/architecture/calc-rules-v01.md` cites "cl 19.7" as verbatim source. `docs/research/awards-ma000074-v02.md` contains only clauses 19.1 through 19.5. cl 19.7 does not exist in the source. Rule 8 also cites cl 20.4 with text that doesn't match the source's cl 20.4.
+- **Threat:** If calc engine ships against this citation, wage compliance reports cite a fictional FWC clause. Worker advocates verifying calculations would find the citation unverifiable. Audit risk for the product as a whole.
+- **Proposed fix:** Open awards-ma000074-v02.md, search for "rest period" / "10 consecutive hours" / "200%" — find what (if anything) corresponds to Rule 9's content. Either correct the citation or mark Rule 9 as `[NEEDS VERIFICATION]` until source is located. Same shape for Rule 8.
+- **Scope:** docs/architecture/calc-rules-v01.md verification + targeted citation correction. Single small session.
+- **References:** Codex Pass 2 Probe 1 (2026-05-04); audit file `docs/audits/2026-05-04-three-pass-docs-audit.md` H1.
+- **Closed:** _open_
+
+### ISS-030 — src/types/db.ts stale by 9 migrations (TypeScript compiles against missing schema)
+- **Severity:** P1
+- **Status:** OPEN
+- **Found:** 2026-05-04 by Codex Pass 2 (Pass 1 missed this entirely; explicitly excluded from audit boundary)
+- **Phase:** 0 (compilation safety prerequisite)
+- **Symptom:** src/types/db.ts header says "Last generated: 2026-04-29 (Sprint B1, after migrations 0011 + 0012)". Migrations 0013-0021 have shipped since: document_cases table, documents.case_id, classify_with_case RPC, extend_case_with_document RPC, payslip_facts extraction columns (case_id/pay_date/extraction_status/extracted_at/extraction_jsonb), ocr_suggested provenance enum extension, document-case soft-delete, deleted-case attachment guard.
+- **Threat:** TypeScript compiles against a fake schema. Any new code touching these tables would either fail to compile against current types, or compile against stale types and break at runtime. Higher impact than REF-DB-schema.md drift because it affects shipped code type safety.
+- **Proposed fix:** Regenerate types from current Supabase schema. Either via Supabase CLI (`supabase gen types typescript --linked > src/types/db.ts`) or via existing project tooling. Verify regenerated file includes all 0013-0021 entities. Smoke build to confirm no type errors surface in shipped code.
+- **Scope:** src/types/db.ts regeneration + smoke build + commit. Single small session, ~30-45 min.
+- **References:** Codex Pass 2 Probe 9b; audit file `docs/audits/2026-05-04-three-pass-docs-audit.md` H2.
+- **Closed:** _open_
+
+### ISS-031 — REF-DB-schema.md 10 migrations behind (self-described P1 drift)
+- **Severity:** P2 (file self-describes as P1; downgraded to P2 because src/types/db.ts is more critical)
+- **Status:** OPEN
+- **Found:** 2026-05-04 by Pass 1 (verified by Codex Pass 2)
+- **Phase:** 0 (reference doc hygiene)
+- **Symptom:** REF-DB-schema.md Status line says "Migrations 0001 (superseded), 0002, 0003 are live... Migrations 0004–0011 extend the schema." Migrations 0012-0021 have shipped (FK indexes, public-pattern storage RLS, document_cases foundation, payslip extraction columns, soft-delete, RLS perf, deleted-case guards). REF-DB-schema.md does not mention any of these in its body.
+- **Threat:** REF-DB-schema.md is loaded as canonical reference for DB queries. Stale reference means any new query writing or schema reasoning starts from incorrect mental model. File's own header: "Drift between this file and supabase/migrations/ is a P1 audit finding."
+- **Proposed fix:** Update REF-DB-schema.md to cover migrations 0012-0021. Specifically add: document_cases table + RLS policies, documents.case_id column, documents.deleted_at column, payslip_facts extraction columns + provenance fix, ocr_suggested enum extension, classify_with_case RPC body, extend_case_with_document RPC body and the case-soft-delete-attachment guard.
+- **Scope:** ~2h read + write. Bundle with ISS-030 if convenient (both are schema reference updates).
+- **References:** Pass 1 finding HIGH #3; Codex Pass 2 Probe 3; audit file `docs/audits/2026-05-04-three-pass-docs-audit.md` H3.
+- **Closed:** _open_
+
+### ISS-032 — Workflow G (reconciliation) data contract not designed
+- **Severity:** P2 (blocks reconciliation engine build)
+- **Status:** OPEN
+- **Found:** 2026-05-04 by Codex Pass 2 (cross-document reconciliation IS in docs/product/workflows.md as Workflow G — "Comparison + report" — but the data contract layer underneath is undefined)
+- **Phase:** 0 (reconciliation prerequisite)
+- **Symptom:** docs/product/workflows.md describes Workflow G as "Run a comparison. Surface the gap with information-tool framing. Export a PDF." but does not specify: (a) what fields are fetched from which buckets; (b) which calculations happen at bucket level vs reconciliation level; (c) time-period anchoring rules (pay period vs roster period vs quarterly super); (d) partial-bucket handling (what to render when not all buckets are populated); (e) discrepancy thresholds.
+- **Threat:** Without a data contract, the reconciliation layer can't be built. Each new bucket extraction (BUILD-13 contract, future shift, super, bank) ships without knowing which fields will be consumed by reconciliation. Risk of building bucket extractions that don't carry the right shape for cross-doc comparison.
+- **Proposed fix:** Write a one-page data contract addendum to workflows.md OR create docs/architecture/reconciliation-contract-v01.md. Specify: per-bucket calculated fields consumed by Workflow G; deltas computed at reconciliation level (subtraction only); time-period anchor rules; partial-bucket status definitions (pending/partial/complete); discrepancy thresholds.
+- **Architectural anchor:** Kimball "Data Warehouse Toolkit" 3rd ed. Chapter 6 (Accumulating Snapshot Fact Table) and Martin Fowler "Event Sourcing" (martinfowler.com/eaaDev/EventSourcing.html). Both verified real this session via direct URL/PDF read. Pattern: bucket-level calculations (transaction fact tables) + reconciliation snapshot (accumulating fact table). Calculations live at bucket level (already encoded in calc-rules-v01.md); reconciliation does delta-only comparison.
+- **Scope:** Design doc, ~30-60 min. No code.
+- **References:** Codex Pass 2 Probe 7; audit file `docs/audits/2026-05-04-three-pass-docs-audit.md` H7; Kimball + Fowler external sources verified 2026-05-04.
+- **Closed:** _open_
+
+### ISS-033 — document_extractions table documented as load-bearing but bypassed by api/extract.ts
+- **Severity:** P2
+- **Status:** OPEN
+- **Found:** 2026-05-04 by Pass 1 (verified by Codex Pass 2 as not-a-false-positive)
+- **Phase:** 0 (architectural fork)
+- **Symptom:** Migration 0011 creates document_extractions table. document-intelligence-plan-v01.md and REF-FACT-model.md (post-ADR-013 section) say it stores proposed-state extractions. Reality: api/extract.ts writes directly to payslip_facts.extraction_jsonb, bypassing document_extractions entirely. Zero reads/writes to document_extractions in src/ or api/. Daily task log records "Architectural fork mid-sprint... Path A chosen: extend the existing table" but no ADR formalizes the decision.
+- **Threat:** Future bucket extractions (contract, super, bank, shift) will hit the same fork and may pick differently — leading to inconsistent storage patterns across buckets. Architectural drift compounds.
+- **Proposed fix:** Either (a) write ADR-015 deprecating document_extractions and standardizing on per-bucket *_facts.extraction_jsonb pattern, or (b) retrofit api/extract.ts to write through document_extractions first, matching the documented design intent. Decision affects all future bucket extraction work.
+- **Scope:** ADR (~30 min) OR retrofit (~2-3 hours code work). Decision call should precede BUILD-13.
+- **References:** Pass 1 finding HIGH #1; Codex Pass 2 Probe 8a (not a false positive); audit file `docs/audits/2026-05-04-three-pass-docs-audit.md` H5.
+- **Closed:** _open_
+
+### ISS-034 — extract-payslip-v02 deployed; no v02.md doc; v01 schema in extraction-service-v01.md missing employer_name + earnings[]
+- **Severity:** P2
+- **Status:** OPEN
+- **Found:** 2026-05-04 by Pass 1 (verified by Codex Pass 2)
+- **Phase:** 0 (prompt versioning + schema sync)
+- **Symptom:** api/extract.ts:34 EXTRACTOR_PROMPT_VERSION = 'extract-payslip-v02'. Full prompt body inlined in extract.ts:372-423 (buildSystemPrompt). docs/architecture/prompts/extract-payslip-v01.md is a skeleton ("Sprint B2 fills in production copy"). No extract-payslip-v02.md exists. extraction-service-v01.md payslip OUTPUT schema does not include employer_name or earnings[] (added by deployed v02 prompt; live only in code comments + DB extraction_jsonb.raw blob).
+- **Threat:** Future cross-version comparison filter (per layered-memory-v01.md Layer 4) will silently misbehave because v02 schema additions live in TypeScript, not in versioned prompt doc. Future maintainer cannot reproduce v02 output without reading extract.ts. Pattern repeats for any future v03 update.
+- **Proposed fix:** Create docs/architecture/prompts/extract-payslip-v02.md with deployed prompt content + employer_name + earnings[] schema additions. Either (a) update extraction-service-v01.md payslip schema to v02 inline, or (b) supersede to extraction-service-v02.md.
+- **Scope:** ~1h. Single small session.
+- **References:** Pass 1 finding HIGH #2; Codex Pass 2 Probe 8b (not in retros); audit file `docs/audits/2026-05-04-three-pass-docs-audit.md` H6.
+- **Closed:** _open_
+
 ## Closed issues
 
 ### SEC-002 — `SUPABASE_SERVICE_ROLE_KEY` leaked into client bundles via `VITE_*` prefix
