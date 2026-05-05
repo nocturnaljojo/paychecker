@@ -1,5 +1,10 @@
 # REF-FACT-model
 
+> **Source-of-truth status:** Derived (quick-reference mirror of canonical design)
+> **Canonical source:** `docs/architecture/add-fact-pattern.md`
+> **Last verified against source:** 2026-04-28
+> **Drift policy:** This is a short human-readable mirror. For full design intent see `add-fact-pattern.md`. If they disagree, the canonical doc wins.
+
 ## Purpose
 Deep dive on the 3-layer fact model. Architectural principle #2 (from `CLAUDE.md`) operationalised.
 

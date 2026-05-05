@@ -1,5 +1,10 @@
 # REF-DB-schema
 
+> **Source-of-truth status:** Derived
+> **Canonical source:** `supabase/migrations/`
+> **Last verified against source:** 2026-04-28
+> **Drift policy:** If this file disagrees with `supabase/migrations/`, this file is stale. Migrations are authoritative. Update this file in the same commit as any new migration.
+
 ## Purpose
 Source of truth for the Supabase schema. Update this file in the same commit as any migration. Drift between this file and `supabase/migrations/` is a P1 audit finding.
 

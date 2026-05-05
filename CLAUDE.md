@@ -120,6 +120,22 @@ See `docs/architecture/fact-model-v1.md` for the 3-layer model.
 18. Worker safety always trumps engineering elegance. If a feature could expose a worker to retaliation from their employer, do not build it without explicit safeguard review.
 19. Plan-format convention for test steps. When writing a /plan, every manual test step must be explicitly tagged with its runner: [Claude-runnable] for DB queries, typecheck, git diff, or static analysis Claude Code can run directly; [Playwright-runnable] for browser interaction, network capture, or DOM inspection; [Supabase-MCP-runnable] for backend log inspection, schema queries, or RLS policy verification; [human-runnable] reserved for genuine human-judgement tasks (visual polish, copy tone, real-device behaviour, accessibility audits). Test ownership is visible in the plan, not discovered at close-out.
 
+## Session Protocol Enforcement
+
+First action of every build session: invoke `.claude/skills/SKILL-PRJ-session-start.md`.
+
+Before starting work, confirm to user:
+- Phase + last session topic (from LATEST.md)
+- That LATEST.md itself is current (points at most recent retro file in docs/retros/)
+- Open P0/P1 issues
+- Proposed next action with file path
+
+Do NOT proceed if LATEST.md is itself stale — surface the staleness first. Skipping session-start is a discipline violation, not a shortcut.
+
+Final action of every build session: invoke `.claude/skills/SKILL-PRJ-session-end.md` before push. This includes writing the session retro and updating LATEST.md to point at it. A session that commits without writing a retro is incomplete.
+
+Note: This is a CLAUDE.md (advisory) gate, not a hook (deterministic). Anthropic docs note that CLAUDE.md instructions are advisory and "awareness of a constraint does not guarantee adherence." Future hygiene work: evaluate moving this enforcement to Claude Code hooks for deterministic firing.
+
 ## Skills Registry
 
 | Skill | File | Purpose | Status |

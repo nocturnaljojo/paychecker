@@ -1,5 +1,10 @@
 # "Add a Fact" — operational pattern (v01)
 
+> **Source-of-truth status:** Canonical (for fact model design intent)
+> **Canonical source:** this file
+> **Last verified against source:** 2026-04-28
+> **Drift policy:** This is the canonical design intent for the 3-layer fact model. Implementation in `src/` may evolve; this file describes the intent. If implementation diverges materially, update this file or write an ADR superseding it.
+
 **Status:** Accepted (Sprint 6, 2026-04-28). Source of truth for Sprint 7 (Layer 1), Sprint 8 (Layer 2), Sprint 9 (Layer 3).
 **Decision record:** `docs/architecture/decisions.md` — ADR-012.
 **Obeys:** ADR-001 (confirmation sacred), ADR-005 (indexing not looping), ADR-006 (orient don't collect), ADR-007 (two gates before mismatches), `SKILL-FACT-confirmation`, `confirmation-flow.md`, `personas.md` (Apete).

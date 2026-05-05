@@ -1,4 +1,11 @@
+> **Superseded by:** `docs/architecture/add-fact-pattern.md` — see that file for current fact model design intent.
+
 # Architecture — fact model v1
+
+> **Source-of-truth status:** Historical
+> **Canonical source:** `docs/architecture/add-fact-pattern.md`
+> **Last verified against source:** 2026-04-26
+> **Drift policy:** This file is preserved for historical context. For current fact model design, see `add-fact-pattern.md`.
 
 This is the architecture-track companion to `.claude/ref/REF-FACT-model.md`. The REF file is the engineer's quick-reference; this file is the reasoning trail.
 
